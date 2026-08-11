@@ -15,11 +15,24 @@ GIST HURGroup(허필원 교수 연구실) 내부 사용 목적으로 개발되�
 
 ## 설치
 
-필수는 **Python 3.12+** 하나다. (검색 DB는 내장 SQLite, 스냅샷·롤백은 내장 백업 — Git 불필요)
+필수는 **Python 3.12+** (와 pipx) 하나다. 검색 DB는 내장 SQLite, 스냅샷·롤백은 내장 백업 — Git 불필요.
+설치는 **컴퓨터당 1회**다 — 프로젝트마다 다시 설치할 필요 없다 (프로젝트 생성은 `init`).
 
 ```console
-$ pipx install .            # 저장소 폴더에서. 개발 중엔 pipx install -e .
-$ llm-wiki --help
+# 일반 사용자: GitHub에서 바로 설치 (clone 불필요)
+$ pipx install "git+https://github.com/pilwonhur/llm-wiki.git"
+
+# 업데이트 (새 버전이 push되었을 때)
+$ pipx reinstall llm-wiki
+
+$ llm-wiki --help           # 확인
+```
+
+개발자는 clone 후 editable 설치를 쓴다 — 소스 수정이 즉시 반영된다:
+
+```console
+$ git clone https://github.com/pilwonhur/llm-wiki.git && cd llm-wiki
+$ pipx install -e .
 ```
 
 | 선택 설치 | 언제 |
