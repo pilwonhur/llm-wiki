@@ -1,2 +1,2 @@
 """GIST HURGroup LLM-Wiki — 연구실 프로젝트별 지식 편찬 시스템."""
-__version__ = "0.1.0"
+__version__ = "0.2.0"

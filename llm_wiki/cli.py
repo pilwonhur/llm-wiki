@@ -9,6 +9,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="llm-wiki",
         description="GIST HURGroup LLM-Wiki — 연구실 프로젝트별 지식 편찬 시스템")
+    from . import __version__
+    p.add_argument("--version", action="version", version=f"llm-wiki {__version__}")
     sub = p.add_subparsers(dest="cmd")
 
     sp = sub.add_parser("init", help="프로젝트 구조 생성 + 온보딩")

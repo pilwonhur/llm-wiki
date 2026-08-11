@@ -242,3 +242,5 @@ $ LLM_WIKI_FAKE=응답.json llm-wiki compile    # LLM 없이 파이프라인 테
 - 구조: `core.py`(경로·해시·manifest·lock·백업) / `*_cmd.py`(명령) /
   `backends.py`(LLM) / `templates/project/`(init이 설치하는 템플릿 팩)
 - 테스트 기준: 랩 문서 `SCENARIOS.md`의 P0 시나리오 54개
+- 버전: 유의적 버전(주.부.수) — 이력은 `CHANGELOG.md`, 확인은 `llm-wiki --version`,
+  릴리스마다 git 태그(`v0.x.y`)
