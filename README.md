@@ -38,10 +38,16 @@ $ pipx install -e .
 
 | 선택 설치 | 언제 |
 |---|---|
-| Claude Code (`claude`) | OAuth 구독으로 편찬할 때 (권장 기본) |
-| `pipx inject llm-wiki anthropic` + `ANTHROPIC_API_KEY` | API key 백엔드 |
-| Ollama | 로컬 LLM — 민감 프로젝트·오프라인 |
+| Claude Code (`claude`) | **편찬(compile) 백엔드** — OAuth 구독 (권장 기본) + 에이전트 입구·MCP 클라이언트 |
+| Codex CLI (`codex`) | **에이전트 입구·MCP 클라이언트로 사용** (스킬 어댑터 동봉). 편찬 백엔드로는 아직 미지원 — 아래 참고 |
+| `pipx inject llm-wiki anthropic` + `ANTHROPIC_API_KEY` | API key 편찬 백엔드 (Claude Code 없이) |
+| Ollama | 로컬 LLM 편찬 백엔드 — 민감 프로젝트·오프라인 |
 | `pipx inject llm-wiki pypdf` | API/Ollama 백엔드로 PDF를 처리할 때 (OAuth는 불필요) |
+
+> Codex 참고: Codex로 대화하며 `/wiki-compile`을 실행하면 편찬 자체는 CLI가 설정된
+> 백엔드(Claude OAuth/API key/Ollama)로 수행한다. OpenAI 구독(OAuth)을 편찬 백엔드로
+> 쓰는 것은 백로그다 — 타사 구독 OAuth는 헤드리스 래핑의 안정성 검증 후 추가한다는
+> 설계 방침(PRD §3.3)에 따른 것.
 
 ## 빠른 시작
 
