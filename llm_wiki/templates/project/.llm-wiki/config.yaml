@@ -1,0 +1,8 @@
+# Phase 0 파일럿 설정 (정식 CLI 도입 시 자동 이관)
+phase: 0
+project: "<TODO: 프로젝트 정식 명칭>"
+language: ko
+review:
+  reviewer: "<TODO: 담당 reviewer 실명>"
+  stale_draft_days: 14
+external_llm_allowed: true   # 민감 프로젝트면 false (Phase 0에서는 해당 프로젝트로 파일럿하지 말 것)

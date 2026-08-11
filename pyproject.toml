@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-wiki"
+version = "0.1.0"
+description = "GIST HURGroup LLM-Wiki - lab knowledge compilation system"
+requires-python = ">=3.12"
+dependencies = []          # 코어는 의존성 0 (N8). 선택 기능은 extras로.
+
+[project.optional-dependencies]
+pdf = ["pypdf>=4"]         # 비 macOS 페이지 검사
+llm = ["anthropic>=0.40"]  # API key 백엔드 (다음 증분)
+
+[project.scripts]
+llm-wiki = "llm_wiki.cli:main"
+
+[tool.setuptools]
+packages = ["llm_wiki"]
+
+[tool.setuptools.package-data]
+llm_wiki = ["templates/**/*", "templates/**/.*", "templates/**/.claude/**/*"]
