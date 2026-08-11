@@ -127,8 +127,16 @@ $ llm-wiki audit                   # ⑥ 품질 감사 (링크·페이지·statu
 
 ### B. 에이전트 CLI (Claude Code / Codex — 대화하면서 작업)
 
-프로젝트 폴더에서 에이전트를 열면 `AGENTS.md` 규칙과 스킬 어댑터가 자동 적용된다
-(init이 설치). 스킬은 내부적으로 CLI를 호출하므로 결과는 터미널과 동일하다.
+**도구별 시작 준비** — "즉시"는 init된 프로젝트 폴더를 여는 것만으로 동작한다는 뜻:
+
+| | 규칙 (AGENTS.md) | 자연어 작업 | `/wiki-*` 슬래시 명령 | `/wiki-init` (새 폴더용) |
+|---|---|---|---|---|
+| **Claude Code** | 즉시 (`CLAUDE.md`가 import) | 즉시 | 즉시 (`.claude/skills/` 자동 인식) | 1회: `cp -R extras/claude-global-skills/wiki-init ~/.claude/skills/` |
+| **Codex** | 즉시 (표준 파일 직접 읽음) | 즉시 | 1회: `cp adapters/codex/*.md ~/.codex/prompts/` | 1회: `cp extras/codex-global-prompts/wiki-init.md ~/.codex/prompts/` |
+
+즉 **Codex 사용자도 규칙·자연어는 복사 없이 바로 동작**하고, 슬래시 명령만 컴퓨터당
+1회 복사가 필요하다 (`adapters/`는 init이 모든 프로젝트에 설치해 둔다).
+스킬/프롬프트는 내부적으로 CLI를 호출하므로 결과는 터미널과 동일하다.
 
 ```console
 $ cd Project-X && claude
@@ -138,7 +146,6 @@ $ cd Project-X && claude
 > 인박스 정리하고 편찬해줘        # 자연어도 동일하게 동작
 ```
 
-Codex: `adapters/codex/*.md`를 `~/.codex/prompts/`로 복사하면 같은 `/wiki-*` 명령 사용.
 규칙 수정은 항상 `AGENTS.md` 한 곳에서만 한다 (`CLAUDE.md`는 import 한 줄).
 
 **init도 대화로 할 수 있다** — 프로젝트별 스킬은 init이 설치하므로 새 폴더에는 아직
