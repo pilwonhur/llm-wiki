@@ -54,10 +54,24 @@ $ pipx install -e .
 **템플릿 파일을 수동으로 복사할 필요가 없다** — 템플릿 팩(폴더 구조, AGENTS.md,
 워크플로우, 문서 템플릿, 스킬 어댑터)이 패키지에 내장되어 있고 `init`이 전부 설치한다.
 
+**init은 세 가지 방법 중 아무 것으로나 할 수 있다** (결과 동일):
+
+| 방법 | 사용 |
+|---|---|
+| ① 터미널 | `mkdir Project-X && cd Project-X && llm-wiki init` — 대화형 온보딩 내장 (스크립트용 `--yes`) |
+| ② 에이전트에게 자연어 | 새 폴더에서 Claude Code/Codex를 열고 **"여기에 위키 프로젝트 만들어줘"** — 에이전트가 온보딩을 대화로 진행하고 내부적으로 `llm-wiki init` 실행 |
+| ③ 전역 스킬 `/wiki-init` | 아래 한 줄로 **한 번 등록**해 두면, 아무 폴더에서나 `/wiki-init`으로 시작: |
+
 ```console
+# ③의 등록 (컴퓨터당 1회) — 프로젝트 스킬(/wiki-ingest 등)은 init이 설치하므로
+# init 자체는 전역 스킬이 필요하다
+$ cp -R extras/claude-global-skills/wiki-init ~/.claude/skills/
+```
+
+```console
+# ①의 예
 $ mkdir Project-X && cd Project-X
 $ llm-wiki init             # 대화형 온보딩 (이름·목적·구성원·reviewer·민감도·모델)
-                            # 스크립트용: llm-wiki init --yes
 ```
 
 init이 만드는 것: `00_Project`~`90_Archive` 표준 구조, `.llm-wiki/`(config·manifest·
