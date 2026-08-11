@@ -127,6 +127,16 @@ $ cd Project-X && claude
 Codex: `adapters/codex/*.md`를 `~/.codex/prompts/`로 복사하면 같은 `/wiki-*` 명령 사용.
 규칙 수정은 항상 `AGENTS.md` 한 곳에서만 한다 (`CLAUDE.md`는 import 한 줄).
 
+**init도 대화로 할 수 있다** — 프로젝트별 스킬은 init이 설치하므로 새 폴더에는 아직
+없다. 전역 스킬을 한 번 등록해 두면 아무 폴더에서나 `/wiki-init`으로 시작할 수 있다:
+
+```console
+$ cp -R extras/claude-global-skills/wiki-init ~/.claude/skills/
+```
+
+또는 그냥 에이전트에게 "여기에 위키 프로젝트 만들어줘"라고 말하면 된다 —
+에이전트가 온보딩을 대화로 진행하고 내부적으로 `llm-wiki init`을 실행한다.
+
 ### C. MCP (외부 AI 비서 — 질의·Q&A·코멘트)
 
 Claude Code·Codex·Gemini CLI·OpenClaw 등 MCP 클라이언트가 Wiki에 접속하는 도구 중립 창구.
