@@ -49,6 +49,31 @@ $ pipx install -e .
 > 쓰는 것은 백로그다 — 타사 구독 OAuth는 헤드리스 래핑의 안정성 검증 후 추가한다는
 > 설계 방침(PRD §3.3)에 따른 것.
 
+### Windows / Linux에서 사용
+
+기능은 세 OS에서 동일하다 (경로·한글 파일명 NFC 정규화·검색·백업 전부 이식성 확보).
+OS별로 다른 것은 설치 명령과 두 가지 보조 기능뿐:
+
+```console
+# Windows (PowerShell)
+> winget install Python.Python.3.12
+> python -m pip install --user pipx && python -m pipx ensurepath   # 새 터미널 열기
+> pipx install "git+https://github.com/pilwonhur/llm-wiki.git"
+
+# Linux (Ubuntu 예)
+$ sudo apt install python3 pipx && pipx ensurepath
+$ pipx install "git+https://github.com/pilwonhur/llm-wiki.git"
+```
+
+| 차이 | macOS | Windows / Linux |
+|---|---|---|
+| audit의 PDF 페이지 수 검사 | 자동 (Spotlight) | `pipx inject llm-wiki pypdf` 1회 주입 권장 (없으면 해당 검사만 생략) |
+| 알림 채널 | 콘솔 + macOS 알림 + webhook/이메일 | 콘솔 + webhook/이메일 (동일 설정) |
+| 야간 배치 | cron/launchd | Linux: cron / Windows: 작업 스케줄러 — `schtasks /Create /SC DAILY /ST 03:00 /TN llm-wiki /TR "cmd /c cd /d C:\path\Project-X && llm-wiki ingest --yes && llm-wiki compile"` |
+
+Dropbox 등으로 프로젝트 폴더를 macOS↔Windows 간 공유해도 된다 — 한글 파일명
+정규화(NFC/NFD)를 시스템이 처리한다.
+
 ## 빠른 시작
 
 **템플릿 파일을 수동으로 복사할 필요가 없다** — 템플릿 팩(폴더 구조, AGENTS.md,

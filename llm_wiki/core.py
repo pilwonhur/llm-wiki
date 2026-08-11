@@ -236,8 +236,19 @@ class Project:
 
 
 def _pid_alive(pid: int) -> bool:
+    if os.name == "nt":
+        # Windows에서 os.kill(pid, 0)은 확인이 아니라 프로세스를 종료시킨다 —
+        # OpenProcess로 존재만 조회한다.
+        import ctypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        h = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if h:
+            ctypes.windll.kernel32.CloseHandle(h)  # type: ignore[attr-defined]
+            return True
+        return False
     try:
-        os.kill(pid, 0)
+        os.kill(pid, 0)  # POSIX: 신호 0 = 존재 확인만
         return True
     except (ProcessLookupError, PermissionError):
         return False

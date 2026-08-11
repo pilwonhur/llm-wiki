@@ -9,6 +9,16 @@ GIST HUR Group LLM-Wiki의 버전별 변경 이력. 형식은 [Keep a Changelog]
 
 업데이트: `pipx reinstall llm-wiki` / 버전 확인: `llm-wiki --version`
 
+## [0.2.1] — 2026-08-12
+
+### Fixed
+- **Windows 치명 버그**: lock의 프로세스 생존 확인이 os.kill(pid, 0)을 사용했는데,
+  Windows에서 이는 확인이 아니라 프로세스 종료다 — stale lock 검사가 실행 중인
+  편찬을 죽일 수 있었음. Windows에서는 OpenProcess 조회로 교체
+
+### Added
+- README: Windows/Linux 사용 안내 (설치 명령, OS별 차이 표, 작업 스케줄러 예시)
+
 ## [0.2.0] — 2026-08-12
 
 온보딩·타 도구 연동 정비 (사용자 검수 문답에서 발굴된 공백들의 해소).
