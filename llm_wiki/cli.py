@@ -47,7 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--no-draft", action="store_true", help="approved/reviewed만")
 
     sub.add_parser("reindex", help="검색 인덱스 재구축")
-    sub.add_parser("serve-mcp", help="MCP stdio 서버 (외부 AI 비서 연동)")
+    sp = sub.add_parser("serve-mcp", help="MCP stdio 서버 (외부 AI 비서 연동)")
+    sp.add_argument("--project", help="프로젝트 폴더 경로 (전역 등록 클라이언트용 — 미지정 시 현재 위치에서 탐색)")
 
     sp = sub.add_parser("setup-agent", help="전역 에이전트 어댑터 설치 (/wiki-init 등)")
     sp.add_argument("tool", choices=["claude", "codex", "all"], help="대상 도구")

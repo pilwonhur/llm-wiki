@@ -159,12 +159,35 @@ $ cd Project-X && claude
 
 Claude Code·Codex·Gemini CLI·OpenClaw 등 MCP 클라이언트가 Wiki에 접속하는 도구 중립 창구.
 
+서버는 표준 MCP stdio라서 **MCP를 지원하는 어떤 클라이언트든** 붙는다. 클라이언트가
+프로젝트 폴더 밖에서 서버를 띄우는 경우(전역 설정 등록)에는 `--project`로 경로를 지정한다.
+
+**Claude Code** (프로젝트 폴더에서 등록):
+
 ```console
 $ cd Project-X
-$ claude mcp add llm-wiki -- llm-wiki serve-mcp     # Claude Code 등록 (한 번만)
+$ claude mcp add llm-wiki -- llm-wiki serve-mcp
 ```
 
-OpenClaw 등 다른 클라이언트: command `llm-wiki`, args `["serve-mcp"]`, cwd는 프로젝트 폴더.
+**Codex** (`~/.codex/config.toml`에 추가):
+
+```toml
+[mcp_servers.llm-wiki]
+command = "llm-wiki"
+args = ["serve-mcp", "--project", "/절대/경로/Project-X"]
+```
+
+**Gemini CLI** (`~/.gemini/settings.json`에 추가):
+
+```json
+{"mcpServers": {"llm-wiki": {
+  "command": "llm-wiki",
+  "args": ["serve-mcp", "--project", "/절대/경로/Project-X"]}}}
+```
+
+**Antigravity / OpenClaw 등**: 각 도구의 MCP 설정 화면에서 command `llm-wiki`,
+args `["serve-mcp", "--project", "<프로젝트 경로>"]`로 등록 — 형식은 위와 동일하다.
+프로젝트가 여러 개면 프로젝트마다 서버를 하나씩(이름을 다르게) 등록한다.
 
 | MCP 도구 | 기능 | 쓰기 권한 |
 |---|---|---|

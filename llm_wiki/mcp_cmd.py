@@ -149,7 +149,13 @@ def _call(proj: Project, name: str, a: dict) -> str:
 
 
 def cmd_serve_mcp(args) -> None:
-    proj = require_project()
+    if getattr(args, "project", None):
+        root = Path(args.project).resolve()
+        if not (root / ".llm-wiki").is_dir():
+            raise SystemExit(f"오류: {root} 는 llm-wiki 프로젝트가 아닙니다 (.llm-wiki 없음)")
+        proj = Project(root)
+    else:
+        proj = require_project()
     out = sys.stdout
 
     def send(obj):
