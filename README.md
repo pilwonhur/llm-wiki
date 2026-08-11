@@ -63,9 +63,8 @@ $ pipx install -e .
 | ③ 전역 스킬 `/wiki-init` | 아래 한 줄로 **한 번 등록**해 두면, 아무 폴더에서나 `/wiki-init`으로 시작: |
 
 ```console
-# ③의 등록 (컴퓨터당 1회) — 프로젝트 스킬(/wiki-ingest 등)은 init이 설치하므로
-# init 자체는 전역 스킬이 필요하다
-$ cp -R extras/claude-global-skills/wiki-init ~/.claude/skills/
+# ③의 등록 (컴퓨터당 1회, 아무 위치에서나 실행 가능 — 파일이 패키지에 내장됨)
+$ llm-wiki setup-agent claude      # Codex 사용자: llm-wiki setup-agent codex
 ```
 
 ```console
@@ -117,6 +116,7 @@ $ llm-wiki audit                   # ⑥ 품질 감사 (링크·페이지·statu
 | `models [add\|list\|remove]` | 모델 레지스트리 (`~/.llm-wiki/models.yaml`) |
 | `notify [--dry-run]` | 검토 대기 알림 (0건이면 미발송) |
 | `serve-mcp` | MCP stdio 서버 |
+| `setup-agent claude\|codex\|all` | 전역 에이전트 어댑터 설치 (컴퓨터당 1회) |
 
 야간 배치 (cron 예):
 
@@ -131,12 +131,14 @@ $ llm-wiki audit                   # ⑥ 품질 감사 (링크·페이지·statu
 
 | | 규칙 (AGENTS.md) | 자연어 작업 | `/wiki-*` 슬래시 명령 | `/wiki-init` (새 폴더용) |
 |---|---|---|---|---|
-| **Claude Code** | 즉시 (`CLAUDE.md`가 import) | 즉시 | 즉시 (`.claude/skills/` 자동 인식) | 1회: `cp -R extras/claude-global-skills/wiki-init ~/.claude/skills/` |
-| **Codex** | 즉시 (표준 파일 직접 읽음) | 즉시 | 1회: `cp adapters/codex/*.md ~/.codex/prompts/` | 1회: `cp extras/codex-global-prompts/wiki-init.md ~/.codex/prompts/` |
+| **Claude Code** | 즉시 (`CLAUDE.md`가 import) | 즉시 | 즉시 (`.claude/skills/` 자동 인식) | 1회: `llm-wiki setup-agent claude` |
+| **Codex** | 즉시 (표준 파일 직접 읽음) | 즉시 | 1회: `llm-wiki setup-agent codex` (4개 명령 전부 설치) | 위 명령에 포함 |
 
-즉 **Codex 사용자도 규칙·자연어는 복사 없이 바로 동작**하고, 슬래시 명령만 컴퓨터당
-1회 복사가 필요하다 (`adapters/`는 init이 모든 프로젝트에 설치해 둔다).
-스킬/프롬프트는 내부적으로 CLI를 호출하므로 결과는 터미널과 동일하다.
+즉 **Codex 사용자도 규칙·자연어는 준비 없이 바로 동작**하고, 슬래시 명령은
+`llm-wiki setup-agent codex` **한 번**(컴퓨터당)이면 전 프로젝트에서 쓸 수 있다.
+`setup-agent`는 아무 위치에서나 실행 가능하다 — 어댑터 파일이 패키지에 내장되어
+있어 저장소 clone이나 상대경로가 필요 없다. 스킬/프롬프트는 내부적으로 CLI를
+호출하므로 결과는 터미널과 동일하다.
 
 ```console
 $ cd Project-X && claude
@@ -148,15 +150,10 @@ $ cd Project-X && claude
 
 규칙 수정은 항상 `AGENTS.md` 한 곳에서만 한다 (`CLAUDE.md`는 import 한 줄).
 
-**init도 대화로 할 수 있다** — 프로젝트별 스킬은 init이 설치하므로 새 폴더에는 아직
-없다. 전역 스킬을 한 번 등록해 두면 아무 폴더에서나 `/wiki-init`으로 시작할 수 있다:
-
-```console
-$ cp -R extras/claude-global-skills/wiki-init ~/.claude/skills/
-```
-
-또는 그냥 에이전트에게 "여기에 위키 프로젝트 만들어줘"라고 말하면 된다 —
-에이전트가 온보딩을 대화로 진행하고 내부적으로 `llm-wiki init`을 실행한다.
+**init도 대화로 할 수 있다** — `llm-wiki setup-agent claude`(또는 `codex`)로 전역
+`/wiki-init`을 등록해 두면 아무 새 폴더에서나 대화형으로 시작할 수 있다. 등록 없이도
+에이전트에게 "여기에 위키 프로젝트 만들어줘"라고 말하면 된다 — 에이전트가 온보딩을
+대화로 진행하고 내부적으로 `llm-wiki init`을 실행한다.
 
 ### C. MCP (외부 AI 비서 — 질의·Q&A·코멘트)
 

@@ -49,6 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("reindex", help="검색 인덱스 재구축")
     sub.add_parser("serve-mcp", help="MCP stdio 서버 (외부 AI 비서 연동)")
 
+    sp = sub.add_parser("setup-agent", help="전역 에이전트 어댑터 설치 (/wiki-init 등)")
+    sp.add_argument("tool", choices=["claude", "codex", "all"], help="대상 도구")
+
     sp = sub.add_parser("notify", help="검토 대기 알림 발송 (0건이면 미발송)")
     sp.add_argument("--dry-run", action="store_true", help="콘솔 출력만")
 
@@ -76,6 +79,7 @@ def main(argv: list[str] | None = None) -> None:
         "reindex": search_cmd.cmd_reindex,
         "serve-mcp": mcp_cmd.cmd_serve_mcp,
         "notify": notify_cmd.cmd_notify,
+        "setup-agent": misc_cmd.cmd_setup_agent,
     }
     try:
         dispatch[args.cmd](args)

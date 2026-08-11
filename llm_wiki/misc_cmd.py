@@ -230,6 +230,37 @@ def cmd_diff(args) -> None:
         print("  변경 없음")
 
 
+# ---------------------------------------------------------------- setup-agent
+def cmd_setup_agent(args) -> None:
+    """전역 에이전트 어댑터 설치 — 경로 걱정 없이 어디서든 실행 가능.
+
+    Claude Code: 전역 /wiki-init 스킬 (~/.claude/skills/) — 프로젝트 스킬은 init이 설치.
+    Codex: /wiki-init·ingest·compile·audit 프롬프트 (~/.codex/prompts/) — Codex는
+    프로젝트 프롬프트를 자동 인식하지 않으므로 전역 1회 설치가 4개 명령 전부를 커버.
+    """
+    import shutil as _sh
+
+    src = Path(__file__).parent / "templates" / "agents"
+    tool = args.tool
+    done = []
+    if tool in ("claude", "all"):
+        dst = Path.home() / ".claude" / "skills"
+        dst.mkdir(parents=True, exist_ok=True)
+        _sh.copytree(src / "claude" / "wiki-init", dst / "wiki-init", dirs_exist_ok=True)
+        done.append(f"Claude Code: 전역 /wiki-init 스킬 → {dst / 'wiki-init'}")
+    if tool in ("codex", "all"):
+        dst = Path.home() / ".codex" / "prompts"
+        dst.mkdir(parents=True, exist_ok=True)
+        names = []
+        for f in sorted((src / "codex").glob("*.md")):
+            _sh.copy2(f, dst / f.name)
+            names.append(f"/{f.stem}")
+        done.append(f"Codex: {' '.join(names)} 프롬프트 → {dst}")
+    for d in done:
+        print(f"✓ {d}")
+    print("설치는 컴퓨터당 1회면 충분합니다. 업데이트 후에는 다시 실행하면 갱신됩니다.")
+
+
 # ---------------------------------------------------------------- models (F8.4)
 def cmd_models(args) -> None:
     REGISTRY.parent.mkdir(exist_ok=True)
