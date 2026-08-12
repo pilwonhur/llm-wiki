@@ -15,6 +15,10 @@
 - The canonical record is always human-readable Markdown. Indexes and databases are
   derived artifacts that can be rebuilt at any time.
 
+📖 **[USAGE.md](USAGE.md) — the full usage guide.** Every command, every status transition,
+and every entry point (CLI, agent CLI, MCP) with worked examples. Start there if you are
+actually going to run this.
+
 Design background, requirements, and scenarios live in the lab documents (`PRD.md`,
 `SCENARIOS.md`). Built for internal use by the GIST HUR Group.
 
@@ -125,6 +129,17 @@ $ llm-wiki audit                   # ⑥ quality audit (links, pages, status, co
 
 If something goes wrong: `llm-wiki diff [run-id]` to see the change, then
 `llm-wiki rollback [run-id]` to restore.
+
+> Each step above is covered in detail in **[USAGE.md](USAGE.md)** —
+> [ingest](USAGE.md#5-add-source-material--ingest) ·
+> [compile](USAGE.md#6-compile-the-wiki--compile) ·
+> [draft → reviewed → approved](USAGE.md#7-the-document-lifecycle-draft--reviewed--approved) ·
+> [proposals and review apply](USAGE.md#8-proposals-and-review-apply) ·
+> [ask](USAGE.md#9-ask-questions--ask) ·
+> [comments](USAGE.md#11-comments) ·
+> [agent CLIs](USAGE.md#16-working-with-agent-clis) ·
+> [MCP](USAGE.md#17-working-through-mcp) ·
+> [a complete worked example](USAGE.md#19-a-complete-worked-example)
 
 ---
 
@@ -372,6 +387,10 @@ $ LLM_WIKI_FAKE=response.json llm-wiki compile    # test the pipeline without an
   AI가 직접 수정할 수 없고 변경 **제안**만 할 수 있다 — 프롬프트가 아니라 코드가 강제한다.
 - 정본은 언제나 사람이 읽을 수 있는 Markdown 파일. 인덱스·DB는 재구축 가능한 파생물.
 
+📖 **[USAGE.md](USAGE.md) — 전체 사용 설명서 (영문).** 모든 명령, 상태 전이(draft →
+reviewed → approved), 세 가지 입구(CLI·에이전트 CLI·MCP)를 실제 실행 예시와 함께 설명한다.
+실제로 운영할 계획이라면 여기부터 보면 된다.
+
 설계 배경·요구사항·시나리오는 랩 문서(`PRD.md`, `SCENARIOS.md`) 참조.
 GIST HURGroup(허필원 교수 연구실) 내부 사용 목적으로 개발되었다.
 
@@ -478,6 +497,17 @@ $ llm-wiki audit                   # ⑥ 품질 감사 (링크·페이지·statu
 ```
 
 문제가 생기면: `llm-wiki diff [실행ID]`로 변경 확인 → `llm-wiki rollback [실행ID]`로 복원.
+
+> 각 단계의 상세는 **[USAGE.md](USAGE.md)** 참조 (영문) —
+> [ingest](USAGE.md#5-add-source-material--ingest) ·
+> [compile](USAGE.md#6-compile-the-wiki--compile) ·
+> [draft → reviewed → approved](USAGE.md#7-the-document-lifecycle-draft--reviewed--approved) ·
+> [제안·review apply](USAGE.md#8-proposals-and-review-apply) ·
+> [ask](USAGE.md#9-ask-questions--ask) ·
+> [코멘트](USAGE.md#11-comments) ·
+> [에이전트 CLI](USAGE.md#16-working-with-agent-clis) ·
+> [MCP](USAGE.md#17-working-through-mcp) ·
+> [전체 시나리오 예시](USAGE.md#19-a-complete-worked-example)
 
 ---
 
