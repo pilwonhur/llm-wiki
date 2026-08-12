@@ -235,6 +235,7 @@ class Project:
         return load_yamlish(self.config_path)
 
     def save_config(self, cfg: dict) -> None:
+        self.meta.mkdir(parents=True, exist_ok=True)   # 템플릿 복사가 없어도 쓰기는 성공해야 한다
         self.config_path.write_text(dump_yamlish(cfg), encoding="utf-8")
 
     # -- manifest
@@ -248,6 +249,7 @@ class Project:
         return {"sources": []}
 
     def save_manifest(self, m: dict) -> None:
+        self.meta.mkdir(parents=True, exist_ok=True)
         self.manifest_path.write_text(
             json.dumps(m, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

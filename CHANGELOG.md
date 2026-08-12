@@ -9,6 +9,18 @@ GIST HUR Group LLM-Wiki의 버전별 변경 이력. 형식은 [Keep a Changelog]
 
 업데이트: `pipx reinstall llm-wiki` / 버전 확인: `llm-wiki --version`
 
+## [0.3.1] — 2026-08-12
+
+### Fixed
+- **설치본에서 `init`이 죽던 치명 버그** — 프로젝트 템플릿의 `.llm-wiki/` 폴더가
+  wheel에 통째로 빠져 있었다 (config.yaml·manifest.json·wiki-doc.md 템플릿·
+  workflows 프롬프트 3종). package-data 글롭은 점으로 시작하는 폴더 *안쪽*을
+  포함하지 못하는데 `.claude`만 예외 규칙이 있었다. pip/pipx로 설치한 사용자는
+  `llm-wiki init`에서 FileNotFoundError로 중단됐다 (소스 트리에서 실행할 때는
+  파일이 있어 드러나지 않던 문제). MANIFEST.in graft + include-package-data로 해결
+- `save_config`·`save_manifest`가 `.llm-wiki/`를 직접 만들도록 보강 — 템플릿 복사가
+  실패해도 프로젝트 생성이 절반만 된 채 끝나지 않는다
+
 ## [0.3.0] — 2026-08-12
 
 LLM 선택권을 사용자에게. 공급자·인증 방식을 자유롭게 고르고, 한 번 정하면 유지되며,
