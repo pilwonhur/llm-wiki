@@ -27,6 +27,66 @@ STATUS_VALUES = {"draft", "reviewed", "approved", "deprecated", "disputed"}
 # AI(편찬기)가 쓸 수 있는 경로 화이트리스트 (프로젝트 루트 기준 접두사)
 AI_WRITABLE = ("30_Wiki", ".llm-wiki")
 UNSAFE_CHARS = re.compile(r"[\[\]#^|]")  # Obsidian wikilink 충돌 문자 (F1.7)
+
+# ---------------------------------------------------------------- 출력 언어 (F0.2)
+# 문서의 섹션 제목은 사람이 읽는 글이면서 **코드가 파싱하는 스키마**이기도 하다
+# (코멘트 섹션 보존, 출처 누락 검사, Q&A 귀속 …). 그래서 언어별로 상수화하고,
+# 쓸 때는 설정 언어로, **읽을 때는 모든 언어를 허용**한다 — 프로젝트 중간에 언어가
+# 바뀌거나 문서가 섞여도 안전장치가 풀리지 않게.
+LANGUAGES = ("ko", "en")
+DEFAULT_LANG = "ko"
+HEADINGS = {
+    "ko": {"summary": "요약", "meaning": "현재 프로젝트에서의 의미", "sources": "근거",
+           "conflict": "상충하는 근거", "questions": "미해결 질문",
+           "related": "관련 문서", "comments": "코멘트",
+           "prop_current": "현재 내용", "prop_new": "제안 내용", "prop_reason": "근거",
+           "prop_full": "제안 전문", "background": "모델 배경지식 (검증 필요)",
+           "req_suggestion": "제안", "req_rationale": "근거", "item": "항목"},
+    "en": {"summary": "Summary", "meaning": "Relevance to this project",
+           "sources": "Sources", "conflict": "Conflicting evidence",
+           "questions": "Open questions", "related": "Related documents",
+           "comments": "Comments",
+           "prop_current": "Current content", "prop_new": "Proposed content",
+           "prop_reason": "Rationale", "prop_full": "Full proposal",
+           "background": "Model background knowledge (needs verification)",
+           "req_suggestion": "Suggestion", "req_rationale": "Rationale", "item": "Item"},
+}
+FIELDS = {
+    "ko": {"asker": "질문자", "requester": "요청자", "target": "대상",
+           "date": "일시", "question": "질문", "via": "경로"},
+    "en": {"asker": "Asker", "requester": "Requester", "target": "Target",
+           "date": "Date", "question": "Question", "via": "Via"},
+}
+WARN_TEXT = {"ko": ("근거 확인 필요", "검증 필요"),
+             "en": ("Evidence needed", "needs verification")}
+LANG_NAME = {"ko": "한국어", "en": "English"}
+
+
+def lang_of(cfg: dict | None) -> str:
+    lang = str((cfg or {}).get("language", "") or DEFAULT_LANG).strip().lower()
+    return lang if lang in LANGUAGES else DEFAULT_LANG
+
+
+def heading(lang: str, key: str) -> str:
+    """쓰기용 — 설정 언어의 섹션 제목."""
+    return HEADINGS.get(lang, HEADINGS[DEFAULT_LANG])[key]
+
+
+def heading_pattern(key: str) -> str:
+    """읽기용 — 모든 언어의 제목을 받아주는 정규식 조각."""
+    return "|".join(re.escape(HEADINGS[l][key]) for l in LANGUAGES)
+
+
+def field(lang: str, key: str) -> str:
+    return FIELDS.get(lang, FIELDS[DEFAULT_LANG])[key]
+
+
+def field_pattern(key: str) -> str:
+    return "|".join(re.escape(FIELDS[l][key]) for l in LANGUAGES)
+
+
+def warn_texts() -> tuple:
+    return tuple(w for l in LANGUAGES for w in WARN_TEXT[l])
 # 전역 사용자 설정 — 모델·인증 기본값과 모델 레지스트리를 컴퓨터 단위로 보관한다.
 GLOBAL_DIR = Path.home() / ".llm-wiki"
 GLOBAL_CONFIG = GLOBAL_DIR / "config.yaml"

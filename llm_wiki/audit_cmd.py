@@ -12,7 +12,7 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-from .core import STATUS_VALUES, frontmatter, nfc, require_project, today
+from .core import STATUS_VALUES, frontmatter, nfc, require_project, today, heading_pattern, warn_texts
 
 WIKILINK = re.compile(r"\[\[([^\]|#]+)(?:#page=(\d+))?[^\]]*\]\]")
 
@@ -60,16 +60,16 @@ def cmd_audit(args) -> None:
                     stale.append(f"{rel} ({(date.today() - created).days}일)")
             except (TypeError, ValueError):
                 pass
-        if "근거 확인 필요" in text or "검증 필요" in text:
+        if any(w in text for w in warn_texts()):
             warnings.append(rel)
         # 코멘트 형식: 항목이 있으면 날짜·실명 굵게 요구
-        cm = re.search(r"##\s*코멘트\n(.*)$", text, re.S)
+        cm = re.search(rf"##\s*(?:{heading_pattern('comments')})\s*\n(.*)$", text, re.S)
         if cm:
             for line in cm.group(1).splitlines():
                 if line.strip().startswith("- ") and not re.match(
                         r"- \d{4}-\d{2}-\d{2} \*\*[^*]+\*\*", line.strip()):
                     badcomment.append(f"{rel}: {line.strip()[:40]}")
-        if not re.search(r"##\s*근거\s*\n+\s*-\s*\[\[", text):
+        if not re.search(rf"##\s*(?:{heading_pattern('sources')})\s*\n+\s*-\s*\[\[", text):
             nosrc.append(rel)
         for m in WIKILINK.finditer(text):
             target, page = nfc(m.group(1).strip()), m.group(2)

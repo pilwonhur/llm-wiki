@@ -6,7 +6,8 @@ from datetime import date
 from pathlib import Path
 
 from .core import (GLOBAL_REGISTRY, Project, dump_yamlish, frontmatter,
-                   require_project, run_id, today)
+                   heading, heading_pattern, lang_of, require_project, run_id,
+                   today)
 
 REGISTRY = GLOBAL_REGISTRY
 
@@ -125,9 +126,11 @@ def _apply_one(proj, prop) -> None:
     try:
         proj.backup(rid)
         backend = backends.resolve(proj.config(), "compile")
+        lang = lang_of(proj.config())
         prompt = f"""아래 [제안]을 [원문서]에 반영한 문서 전체를 출력하라.
+문서 언어는 원문서를 그대로 따른다 (섹션 제목 포함 — 코드가 이 제목을 파싱한다).
 규칙: 제안된 변경만 반영하고 나머지는 그대로 유지. frontmatter의 status·reviewer·created는
-원문 값 그대로. "## 코멘트" 섹션은 원문 그대로. updated는 {today()}로.
+원문 값 그대로. "## {heading(lang, 'comments')}" 섹션은 원문 그대로. updated는 {today()}로.
 출력은 병합된 문서 전문만 (설명·펜스 금지, `---`로 시작).
 
 [원문서: {target.relative_to(proj.root)}]
@@ -146,9 +149,10 @@ def _apply_one(proj, prop) -> None:
                          merged, count=1, flags=_re.M)
         merged = _re.sub(r"^reviewer:.*$", f"reviewer: {old_fm.get('reviewer', '')}",
                          merged, count=1, flags=_re.M)
-        oc = _re.search(r"(## 코멘트\n.*)$", old, _re.S)
+        cm_re = rf"##\s*(?:{heading_pattern('comments')})\s*\n"
+        oc = _re.search(rf"({cm_re}.*)$", old, _re.S)
         if oc:
-            merged = _re.sub(r"## 코멘트\n.*$", "", merged, flags=_re.S).rstrip() + "\n\n" + oc.group(1)
+            merged = _re.sub(rf"{cm_re}.*$", "", merged, flags=_re.S).rstrip() + "\n\n" + oc.group(1)
         target.write_text(merged, encoding="utf-8")
         prop.unlink()
         proj.log("제안 승인·반영 (review apply)",

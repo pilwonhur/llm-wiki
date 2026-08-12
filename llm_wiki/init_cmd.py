@@ -8,7 +8,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from .core import Project, dump_yamlish, today
+from .core import LANG_NAME, LANGUAGES, Project, heading, today
 
 TEMPLATE = Path(__file__).parent / "templates" / "project"
 
@@ -20,6 +20,19 @@ def _ask(prompt: str, default: str = "") -> str:
     except EOFError:
         val = ""
     return val or default
+
+
+def _ask_lang() -> str:
+    """출력 언어 — 문서 섹션 제목까지 이 언어로 고정된다 (나중에 바꾸면 문서가 섞인다)."""
+    opts = " / ".join(f"{c}={LANG_NAME[c]}" for c in LANGUAGES)
+    ans = _ask(f"Wiki 출력 언어 ({opts})", "ko").strip().lower()
+    if ans in LANGUAGES:
+        return ans
+    for code, name in LANG_NAME.items():          # "한국어"·"English" 로 답해도 받아준다
+        if ans in (name.lower(), code):
+            return code
+    print(f"    (알 수 없는 언어 '{ans}' — 기본값 ko 사용)")
+    return "ko"
 
 
 def _default_model() -> str:
@@ -70,6 +83,23 @@ def _ask_model(default: str) -> str:
     return model
 
 
+def _install_lang_files(root: Path, lang: str) -> None:
+    """언어별 산출물 확정: 문서 템플릿 선택 설치 + AGENTS.md 출력 언어 줄 치환.
+
+    섹션 제목이 코드가 파싱하는 스키마라, 템플릿과 core.HEADINGS 가 같은 값을 써야 한다.
+    """
+    tdir = root / ".llm-wiki" / "templates"
+    src = tdir / f"wiki-doc.{lang}.md"
+    if src.exists():
+        (tdir / "wiki-doc.md").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    _fill(root / "AGENTS.md", {
+        "- 출력 언어: **한국어** (전문 용어는 첫 등장 시 원문 병기).":
+            f"- 출력 언어: **{LANG_NAME[lang]}** (전문 용어는 첫 등장 시 원문 병기). "
+            f"섹션 제목은 템플릿 그대로 — 코드가 파싱한다 "
+            f"(코멘트 섹션 = `## {heading(lang, 'comments')}`).",
+    })
+
+
 def cmd_init(args) -> None:
     root = Path(args.path).resolve() if args.path else Path.cwd()
     root.mkdir(parents=True, exist_ok=True)
@@ -101,7 +131,7 @@ def cmd_init(args) -> None:
         answers["purpose"] = _ask("한 줄 목적")
         answers["members"] = _ask("구성원 (쉼표 구분)")
         answers["reviewer"] = _ask("Wiki reviewer 실명")
-        answers["language"] = _ask("Wiki 출력 언어", "ko")
+        answers["language"] = _ask_lang()
         sens = _ask("외부 LLM 전송 허용? (IRB·산학 등 민감 자료면 n)", "y")
         answers["external"] = sens.lower() not in ("n", "no", "아니오")
         answers["model"] = _ask_model(_default_model())
@@ -125,6 +155,7 @@ def cmd_init(args) -> None:
             "snapshot": {"backup_keep": 10},
             "git": {"enabled": False},
         })
+        _install_lang_files(root, answers["language"])
         # 4) 00_Project 초안 반영 (템플릿의 TODO 치환 — 답이 있을 때만)
         _fill(root / "00_Project" / "README.md", {
             "# <TODO: 프로젝트 정식 명칭>": f"# {answers['name']}",

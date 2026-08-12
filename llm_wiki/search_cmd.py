@@ -30,6 +30,39 @@ STOPWORDS = {"뭐야", "뭔가", "무엇", "무엇인가", "어떻게", "어떤"
              "란", "대해", "대한", "관련", "그리고", "하지만", "것", "수", "때"}
 MIN_STEM = 2
 
+# 영어도 같은 방식으로 근사한다 — FTS5는 스테밍을 안 하므로 "actuators"로 물으면
+# 본문의 "actuator"를 놓친다 (접두 검색은 짧은 쪽→긴 쪽만 잡아준다).
+# 어간을 뽑아 접두 검색으로 넘기면 양방향이 해결된다.
+# 치환("ies"→"y")이 아니라 **잘라내기만** 한다 — 접두 검색이라 글자를 바꾸면
+# 원형과 접두가 어긋난다 ("series"→"sery" 는 series 를 못 잡는다).
+# 자르기만 하면 어간이 원형·활용형 모두의 접두가 되어 양방향이 잡힌다.
+EN_SUFFIXES = ("edness", "ments", "ings", "ment", "ness", "ies", "ing",
+               "ers", "ed", "er", "es", "ly", "s")
+EN_STOPWORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "am",
+    "do", "does", "did", "doing", "have", "has", "had", "of", "in", "on", "at",
+    "to", "for", "from", "by", "with", "about", "into", "over", "and", "or",
+    "but", "if", "then", "than", "so", "as", "that", "this", "these", "those",
+    "it", "its", "they", "them", "their", "we", "our", "you", "your", "i",
+    "he", "she", "his", "her", "what", "which", "who", "whom", "when", "where",
+    "why", "how", "can", "could", "should", "would", "will", "shall", "may",
+    "might", "must", "not", "no", "there", "here", "any", "some", "all", "me",
+    "tell", "explain", "describe", "summarize", "show", "give", "please",
+}
+MIN_EN_STEM = 4   # 짧은 단어를 뭉개지 않게 (spring→spr, series→sery 방지)
+
+
+def _en_stem(w: str) -> str:
+    low = w.lower()
+    for suf in EN_SUFFIXES:
+        if low.endswith(suf) and len(low) - len(suf) >= MIN_EN_STEM:
+            return low[: -len(suf)]
+    return low
+
+
+def _is_hangul(w: str) -> bool:
+    return any("가" <= c <= "힣" for c in w)
+
 
 def _stem(w: str) -> str:
     ordered = sorted(JOSA, key=len, reverse=True)
@@ -44,13 +77,27 @@ def _stem(w: str) -> str:
 
 
 def terms(q: str) -> list[str]:
-    """질문 문장 → 검색 토큰. 조사 제거 + 의문사·불용어 제외."""
+    """질문 문장 → 검색 토큰. 토큰별로 언어를 보고 처리한다 (한·영 혼용 문서 대응).
+
+    한글: 조사·어미 제거 + 의문사 제외 / 영어: 접미사 정규화 + 불용어 제외.
+    """
     out = []
     for w in re.findall(r"[0-9A-Za-z가-힣]+", q):
-        if w in STOPWORDS:
-            continue
-        s = _stem(w)
-        if len(s) >= 1 and s not in STOPWORDS and s not in out:
+        if _is_hangul(w):
+            if w in STOPWORDS:
+                continue
+            s = _stem(w)
+            if s in STOPWORDS:
+                continue
+        elif w.isalpha():
+            if w.lower() in EN_STOPWORDS:
+                continue
+            s = _en_stem(w)
+            if s in EN_STOPWORDS:
+                continue
+        else:
+            s = w
+        if s and s not in out:
             out.append(s)
     return out
 

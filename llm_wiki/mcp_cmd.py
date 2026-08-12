@@ -13,7 +13,8 @@ from datetime import datetime
 from pathlib import Path
 
 from . import search_cmd
-from .core import Project, frontmatter, nfc, require_project, today, unique_path
+from .core import (Project, field, frontmatter, heading, heading_pattern,
+                   lang_of, nfc, require_project, today, unique_path)
 
 PROTOCOL_VERSION = "2024-11-05"
 
@@ -82,9 +83,14 @@ def _call(proj: Project, name: str, a: dict) -> str:
     if name == "wiki_request_edit":
         d = proj.root / "10_Inbox" / "_requests"
         fn = unique_path(d, f"{today()}-{datetime.now().strftime('%H%M%S')}-요청")
-        fn.write_text(f"# 편찬 요청 (외부 비서 경유)\n\n- 요청자: {a['author']}\n"
-                      f"- 대상: {a['path']}\n- 일시: {today()}\n\n## 제안\n{a['suggestion']}\n\n"
-                      f"## 근거\n{a.get('rationale', '')}\n", encoding="utf-8")
+        lg = lang_of(proj.config())
+        fn.write_text(f"# 편찬 요청 (외부 비서 경유)\n\n"
+                      f"- {field(lg, 'requester')}: {a['author']}\n"
+                      f"- {field(lg, 'target')}: {a['path']}\n"
+                      f"- {field(lg, 'date')}: {today()}\n\n"
+                      f"## {heading(lg, 'req_suggestion')}\n{a['suggestion']}\n\n"
+                      f"## {heading(lg, 'req_rationale')}\n{a.get('rationale', '')}\n",
+                      encoding="utf-8")
         return f"요청 접수: {fn.relative_to(proj.root)} — 다음 compile에서 처리됩니다."
 
     if name == "wiki_add_comment":
@@ -93,10 +99,11 @@ def _call(proj: Project, name: str, a: dict) -> str:
             return "오류: 30_Wiki 안의 문서가 아닙니다."
         text = p.read_text(encoding="utf-8")
         line = f"- {today()} **{a['author']}**: {a['comment']}"
-        if "## 코멘트" in text:
+        import re as _re
+        if _re.search(rf"##\s*(?:{heading_pattern('comments')})\s*$", text, _re.M):
             text = text.rstrip() + "\n" + line + "\n"
-        else:
-            text = text.rstrip() + f"\n\n## 코멘트\n\n{line}\n"
+        else:   # 섹션이 없을 때만 만든다 — 있는데 못 찾아 두 번 만드는 일이 없게
+            text = text.rstrip() + f"\n\n## {heading(lang_of(proj.config()), 'comments')}\n\n{line}\n"
         p.write_text(text, encoding="utf-8")  # append 전용 — 본문 비수정 (F12.2)
         return "코멘트 추가 완료 (기록 전용 — 편찬 근거로 쓰이지 않음)"
 
@@ -107,10 +114,11 @@ def _call(proj: Project, name: str, a: dict) -> str:
         if bad:
             return "오류: web 유형은 source_urls(URL) 없이는 승격 불가 (F10.3)."
         fn = unique_path(d, f"{today()}-{datetime.now().strftime('%H%M%S')}-qa")
-        body = [f"# Q&A 세션 ({today()})", f"- 질문자: {a['asker']}",
-                f"- 질문: {a['question']}", ""]
+        lg = lang_of(proj.config())
+        body = [f"# Q&A ({today()})", f"- {field(lg, 'asker')}: {a['asker']}",
+                f"- {field(lg, 'question')}: {a['question']}", ""]
         for i, it in enumerate(a["items"], 1):
-            body += [f"## 항목 {i} [{it.get('kind')}]", it.get("content", ""),
+            body += [f"## {heading(lg, 'item')} {i} [{it.get('kind')}]", it.get("content", ""),
                      *([f"- 출처: {u}" for u in it.get("source_urls", [])]), ""]
         fn.write_text("\n".join(body), encoding="utf-8")
         return f"저장: {fn.relative_to(proj.root)} — ingest 후 편찬 시 반영됩니다."

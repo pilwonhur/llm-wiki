@@ -17,10 +17,11 @@ import shutil
 from pathlib import Path
 
 from . import backends
-from .core import (Project, frontmatter, nfc, require_project, run_id, today,
-                   unique_path)
+from .core import (LANG_NAME, WARN_TEXT, Project, field_pattern, frontmatter,
+                   heading, heading_pattern, lang_of, nfc, require_project,
+                   run_id, today, unique_path)
 
-PROTOCOL = """
+PROTOCOL_HEAD = """
 출력은 반드시 아래 JSON 배열 **하나만** 출력하라 (설명·마크다운 펜스 금지):
 [
   {"action": "create" | "update" | "propose",
@@ -31,9 +32,18 @@ PROTOCOL = """
   문서에 대한 변경 제안 (content는 '현재 내용/제안 내용/근거' 구조의 제안서).
 - 기존 문서 내용을 확실히 모르면 update 대신 propose를 선택하라.
 - 모든 핵심 주장에 [[원자료경로#page=N]] 인용 (PDF는 물리 페이지 번호).
-- 근거를 못 찾은 서술은 "> [!warning] 근거 확인 필요" callout.
-- 자료가 기존 Wiki와 모순되면 임의로 고르지 말고 "## 상충하는 근거"에 양측 기록.
 """
+
+
+def _protocol(lang: str) -> str:
+    """JSON 예시에 중괄호가 있어 f-string으로 만들 수 없다 — 상수 + 언어별 꼬리."""
+    warn = WARN_TEXT[lang][0]
+    return PROTOCOL_HEAD + (
+        f'- 근거를 못 찾은 서술은 "> [!warning] {warn}" callout.\n'
+        f'- 자료가 기존 Wiki와 모순되면 임의로 고르지 말고 '
+        f'"## {heading(lang, "conflict")}"에 양측 기록.\n'
+        f'- **문서 본문과 섹션 제목은 {LANG_NAME[lang]}로 쓴다.** 섹션 제목은 템플릿의 것을\n'
+        f'  글자 그대로 사용하라 — 코드가 이 제목으로 코멘트 보존·출처 검사를 수행한다.\n')
 
 
 def _wiki_index(proj: Project) -> str:
@@ -74,7 +84,8 @@ def _source_text(proj: Project, src: dict, agentic: bool) -> str | None:
 
 
 def _build_prompt(proj: Project, src: dict, index: str, ctx: str,
-                  template: str, agentic: bool, text: str | None) -> str:
+                  template: str, agentic: bool, text: str | None,
+                  lang: str = "ko") -> str:
     src_block = (f"원자료 파일: {src['path']} — 이 파일을 직접 읽어라 (인용 페이지는 "
                  "PDF 물리 페이지 번호를 실제 확인). 프로젝트 폴더 밖은 읽지 마라."
                  if agentic else
@@ -99,7 +110,8 @@ def _build_prompt(proj: Project, src: dict, index: str, ctx: str,
 - status는 draft만. 코멘트 섹션은 절대 건드리지 않는다. 배경지식 서술에는
   "(모델 배경지식 — 검증 필요)" 표시. 프로젝트 자료 기반 내용과 명확히 구분.
 - 이 자료에서 나올 문서는 보통 1~4건이다. 억지로 늘리지 마라.
-{PROTOCOL}"""
+- 출력 언어: **{LANG_NAME[lang]}** (전문 용어는 첫 등장 시 원문 병기).
+{_protocol(lang)}"""
 
 
 def _extract_json(text: str):
@@ -140,15 +152,18 @@ def _apply(proj: Project, rid: str, items: list, report: list) -> None:
                 # 규칙 3: reviewed 이상 → 제안으로 강등
                 target = proj.root / "30_Wiki" / "_Proposals" / f"{Path(rel).stem}-{rid}.md"
                 target.parent.mkdir(parents=True, exist_ok=True)
+                lang = lang_of(proj.config())
                 target.write_text(f"# 변경 제안: [[{Path(rel).stem}]] (자동 강등)\n\n"
                                   f"대상이 {old_fm.get('status')} 상태라 직접 수정 불가.\n\n"
-                                  f"## 제안 전문\n\n{content}", encoding="utf-8")
+                                  f"## {heading(lang, 'prop_full')}\n\n{content}",
+                                  encoding="utf-8")
                 report.append(f"제안(강등): {target.relative_to(proj.root)}")
                 continue
             # F12.1: 기존 코멘트 섹션 보존
-            oc = re.search(r"(## 코멘트\n.*)$", old, re.S)
+            cm_re = rf"##\s*(?:{heading_pattern('comments')})\s*\n"
+            oc = re.search(rf"({cm_re}.*)$", old, re.S)
             if oc:
-                content = re.sub(r"## 코멘트\n.*$", "", content, flags=re.S).rstrip()
+                content = re.sub(rf"{cm_re}.*$", "", content, flags=re.S).rstrip()
                 content += "\n\n" + oc.group(1)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
@@ -163,19 +178,20 @@ def pending_requests(proj: Project) -> list[Path]:
 
 def _parse_request(text: str) -> dict:
     """요청 파일 파싱 (MCP wiki_request_edit 형식, 사람이 쓴 변형도 관대하게)."""
-    def field(label):
-        m = re.search(rf"^-\s*{label}\s*:\s*(.+)$", text, re.M)
+    def fld(key):
+        m = re.search(rf"^-\s*(?:{field_pattern(key)})\s*:\s*(.+)$", text, re.M)
         return m.group(1).strip() if m else ""
 
-    def section(head):
-        m = re.search(rf"^##\s*{head}\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    def section(key):
+        m = re.search(rf"^##\s*(?:{heading_pattern(key)})\s*$(.*?)(?=^##\s|\Z)",
+                      text, re.M | re.S)
         return m.group(1).strip() if m else ""
 
-    suggestion = section("제안")
-    return {"author": field("요청자") or "unknown",
-            "target": field("대상"),
+    suggestion = section("req_suggestion")
+    return {"author": fld("requester") or "unknown",
+            "target": fld("target"),
             "suggestion": suggestion or text.strip(),
-            "rationale": section("근거")}
+            "rationale": section("req_rationale")}
 
 
 def _process_requests(proj: Project, rid: str, report: list) -> tuple[int, int]:
@@ -187,6 +203,7 @@ def _process_requests(proj: Project, rid: str, report: list) -> tuple[int, int]:
     reqs = pending_requests(proj)
     if not reqs:
         return 0, 0
+    lang = lang_of(proj.config())
     wiki = (proj.root / "30_Wiki").resolve()
     prop_dir = proj.root / "30_Wiki" / "_Proposals"
     archive = proj.root / "90_Archive" / "_requests"
@@ -209,9 +226,11 @@ def _process_requests(proj: Project, rid: str, report: list) -> tuple[int, int]:
             f"created: {today()}\nsource_request: {f.relative_to(proj.root)}\n---\n\n"
             f"# 변경 제안: [[{target.stem}]]\n\n"
             f"외부 비서 경유 요청 ({r['author']}) — 사람이 `llm-wiki review apply` 로 승인해야 반영된다.\n\n"
-            f"## 현재 내용\n대상 문서 `{target.relative_to(proj.root)}` (status: {status}) 참조.\n\n"
-            f"## 제안 내용\n{r['suggestion']}\n\n"
-            f"## 근거\n{r['rationale'] or '(요청자가 근거를 적지 않음 — 승인 전 확인 필요)'}\n",
+            f"## {heading(lang, 'prop_current')}\n"
+            f"대상 문서 `{target.relative_to(proj.root)}` (status: {status}) 참조.\n\n"
+            f"## {heading(lang, 'prop_new')}\n{r['suggestion']}\n\n"
+            f"## {heading(lang, 'prop_reason')}\n"
+            f"{r['rationale'] or '(요청자가 근거를 적지 않음 — 승인 전 확인 필요)'}\n",
             encoding="utf-8")
         archive.mkdir(parents=True, exist_ok=True)
         shutil.move(str(f), archive / f.name)   # 처리 흔적 보존 (재처리 방지)
@@ -257,7 +276,8 @@ def cmd_compile(args) -> None:
             try:
                 index = _wiki_index(proj)  # 문서가 늘어나므로 매 파일 갱신
                 text = _source_text(proj, src, agentic)
-                prompt = _build_prompt(proj, src, index, ctx, template, agentic, text)
+                prompt = _build_prompt(proj, src, index, ctx, template, agentic,
+                                       text, lang_of(cfg))
                 print(f"  · {name} 편찬 중...")
                 out, usage = backend.complete(prompt, cwd=proj.root)
                 items = _extract_json(out)

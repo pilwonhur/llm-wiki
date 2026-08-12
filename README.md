@@ -1,5 +1,368 @@
 # GIST HUR Group LLM-Wiki
 
+**English** · [한국어](#한국어)
+
+> **A per-project knowledge compilation system for the HUR Group (Prof. Pilwon Hur's lab),
+> School of Mechanical and Robotics Engineering, GIST** — drop in source material (paper PDFs,
+> meeting notes, proposals, Q&A) and an AI compiles a Markdown Wiki **with file- and
+> page-level citations**, which researchers then review and approve.
+
+- **Humans own the source material, the AI compiles from evidence, and humans approve
+  anything official.**
+- The AI only ever writes `draft`. `reviewed`/`approved` are human-only, and a reviewed
+  document cannot be edited by the AI — it may only file a **proposal**. This is enforced
+  by code, not by prompting.
+- The canonical record is always human-readable Markdown. Indexes and databases are
+  derived artifacts that can be rebuilt at any time.
+
+Design background, requirements, and scenarios live in the lab documents (`PRD.md`,
+`SCENARIOS.md`). Built for internal use by the GIST HUR Group.
+
+---
+
+## Installation
+
+The only requirement is **Python 3.12+** (plus pipx). The search database is the bundled
+SQLite, and snapshots/rollback use a built-in backup — no Git needed.
+Install **once per machine**; you do not reinstall per project (use `init` to create projects).
+
+```console
+# Normal users: install straight from GitHub (no clone needed)
+$ pipx install "git+https://github.com/pilwonhur/llm-wiki.git"
+
+# Update (when a new version has been pushed)
+$ pipx reinstall llm-wiki
+
+$ llm-wiki --help           # check
+```
+
+Developers clone and install editable so source edits take effect immediately:
+
+```console
+$ git clone https://github.com/pilwonhur/llm-wiki.git && cd llm-wiki
+$ pipx install -e .
+```
+
+| Optional install | When you need it |
+|---|---|
+| Claude Code (`claude`) | Anthropic **OAuth subscription** compile backend + agent entry point / MCP client |
+| Codex CLI (`codex`) | OpenAI **OAuth subscription** compile backend + agent entry point / MCP client |
+| Antigravity CLI (`agy`) | Antigravity **OAuth subscription** compile backend + agent entry point / MCP client |
+| `pipx inject llm-wiki anthropic\|openai\|google-genai` + the matching API key | API-key compile backend (no CLI required) |
+| Ollama | Local LLM compile backend — sensitive projects, offline work |
+| `pipx inject llm-wiki pypdf` | Processing PDFs through an API/Ollama backend (not needed for OAuth CLIs) |
+
+**Any one of them is enough to compile.** Pick the provider and auth path with
+`llm-wiki models use`, and check it with `llm-wiki models show` (see "LLM backends and models").
+
+### Windows / Linux
+
+Behavior is identical on all three operating systems (paths, NFC normalization of Korean
+filenames, search, and backups are all portable). Only the install command and two helper
+features differ:
+
+```console
+# Windows (PowerShell)
+> winget install Python.Python.3.12
+> python -m pip install --user pipx && python -m pipx ensurepath   # open a new terminal
+> pipx install "git+https://github.com/pilwonhur/llm-wiki.git"
+
+# Linux (Ubuntu example)
+$ sudo apt install python3 pipx && pipx ensurepath
+$ pipx install "git+https://github.com/pilwonhur/llm-wiki.git"
+```
+
+| Difference | macOS | Windows / Linux |
+|---|---|---|
+| PDF page-count check in `audit` | Automatic (Spotlight) | `pipx inject llm-wiki pypdf` once (without it, only that one check is skipped) |
+| Notification channels | Console + macOS notification + webhook/email | Console + webhook/email (same settings) |
+| Nightly batch | cron/launchd | Linux: cron / Windows: Task Scheduler — `schtasks /Create /SC DAILY /ST 03:00 /TN llm-wiki /TR "cmd /c cd /d C:\path\Project-X && llm-wiki ingest --yes && llm-wiki compile"` |
+
+You can share a project folder between macOS and Windows over Dropbox — the system handles
+NFC/NFD normalization of Korean filenames.
+
+## Quick start
+
+**No manual template copying.** The template pack (folder structure, AGENTS.md, workflows,
+document template, skill adapters) ships inside the package, and `init` installs all of it.
+
+**You can run init three ways** (identical results):
+
+| Way | How |
+|---|---|
+| ① Terminal | `mkdir Project-X && cd Project-X && llm-wiki init` — interactive onboarding built in (`--yes` for scripts) |
+| ② Natural language to an agent | Open Claude Code/Codex in a new folder and say **"set up a wiki project here"** — the agent runs the onboarding as a conversation and calls `llm-wiki init` under the hood |
+| ③ Global skill `/wiki-init` | Register once with the line below, then start from any folder with `/wiki-init`: |
+
+```console
+# Registering ③ (once per machine, runnable from anywhere — the files ship in the package)
+$ llm-wiki setup-agent claude      # Codex users: llm-wiki setup-agent codex
+```
+
+```console
+# Example of ①
+$ mkdir Project-X && cd Project-X
+$ llm-wiki init             # interactive onboarding (name, purpose, members, reviewer, sensitivity, language, model)
+```
+
+What init creates: the `00_Project`–`90_Archive` standard structure, `.llm-wiki/`
+(config, manifest, workflows, backups), `AGENTS.md` + `CLAUDE.md` (agent rules),
+`.claude/skills/` and `.agents/skills/` (skill adapters), and a `10_Inbox/<name>/` folder per
+member. Running it in a folder that already holds files never touches those files, and
+re-running only fills in what is missing (idempotent).
+
+## Daily loop
+
+```console
+$ cp paper.pdf 10_Inbox/jane/      # ① material goes in your own folder (upload attribution)
+$ llm-wiki ingest                  # ② hash, duplicate check, classify, register (--yes accepts guesses)
+$ llm-wiki compile                 # ③ compile — backup first, one source at a time, cost recorded
+$ llm-wiki review                  # ④ review queue (drafts, proposals, disputed)
+   → human: check citations against the originals, then set frontmatter status to reviewed
+$ llm-wiki review apply --all      # ⑤ approve proposals in bulk (after reading the list) — or apply <name>
+$ llm-wiki audit                   # ⑥ quality audit (links, pages, status, conflicted copies… report only)
+```
+
+If something goes wrong: `llm-wiki diff [run-id]` to see the change, then
+`llm-wiki rollback [run-id]` to restore.
+
+---
+
+## Output language (English / Korean)
+
+Choose `ko` (default) or `en` during `init`. The choice governs the document body **and the
+section headings**.
+
+```console
+  Wiki 출력 언어 (ko=한국어 / en=English) [ko]: en
+```
+
+| Language | Document template | Example headings |
+|---|---|---|
+| `ko` | `wiki-doc.ko.md` | `## 요약` `## 근거` `## 코멘트` |
+| `en` | `wiki-doc.en.md` | `## Summary` `## Sources` `## Comments` |
+
+**Section headings are prose for humans and a schema for the code at the same time.**
+Comment-section preservation, the missing-source check, Q&A attribution, and edit-request
+parsing all key off these headings. So the templates and the `core.HEADINGS` constants carry
+the same strings, and the `compile` prompt tells the model to reuse the template's headings verbatim.
+
+**Parsing accepts both languages** — switching languages mid-project, or a mix of documents,
+never silently disables a safeguard such as comment preservation. Even so, new documents would
+sit alongside ones already compiled, so **pick the language when you create the project and keep it.**
+
+Search handles both too: Hangul tokens have particles and verb endings stripped, English tokens
+have plural and tense suffixes stripped, and both go out as prefix queries (approximated with a
+suffix table instead of a morphological analyzer, keeping the zero-dependency rule).
+
+---
+
+## Three ways to use it
+
+The same project has three entry points, and **every one of them goes through the same
+safeguards** (lock, backup, validation).
+
+### A. Terminal CLI (default — batch, scripts, no agent required)
+
+All commands:
+
+| Command | What it does |
+|---|---|
+| `init [path] [--yes]` | Create a project + onboarding (idempotent) |
+| `ingest [--yes]` | Intake from Inbox: hash, duplicates, filename normalization, uploader attribution, classification |
+| `compile` | Compile: backup → one LLM call per source → code-level validation → write → cost record. Also converts pending edit requests (`_requests`) into proposals |
+| `review` | Review queue |
+| `review apply <name>` / `apply --all` / `reject <name> --reason` | Approve or reject proposals |
+| `audit` | Quality audit report (`.llm-wiki/audit/`) |
+| `search <query> [--no-draft]` / `reindex` | Full-text search (approved > reviewed > draft) |
+| `ask <question> [--asker name] [--top N] [--no-draft]` | Wiki-grounded Q&A — cites sources, promotes background knowledge to Q&A after consent |
+| `status` | Project summary |
+| `diff [ID]` / `rollback [ID]` | Inspect changes against a backup / restore |
+| `models use [model] [--role R] [--global]` | Choose the LLM (interactive with no arguments) |
+| `models show` / `models auth <order>` | Show current model and auth paths / change auth priority |
+| `models [list\|add\|remove]` | Model registry (`~/.llm-wiki/models.yaml`) |
+| `notify [--dry-run]` | Review-pending notification (silent when the queue is empty) |
+| `serve-mcp` | MCP stdio server |
+| `setup-agent claude\|codex\|agy\|all` | Install global agent adapters (once per machine) |
+
+Nightly batch (cron example):
+
+```cron
+0 3 * * *  cd /path/Project-X && llm-wiki ingest --yes && llm-wiki compile && llm-wiki notify
+0 4 * * 0  cd /path/Project-X && llm-wiki audit
+```
+
+### B. Agent CLIs (Claude Code / Codex / Antigravity — working conversationally)
+
+`/wiki-*` slash commands are **not MCP**. They are prompt files that tell the agent to run the
+`llm-wiki` CLI, so the result is identical to typing the command yourself — and all the
+code-level safeguards apply.
+
+| | Rules (AGENTS.md) | Natural language | `/wiki-*` commands | `/wiki-init` (for new folders) |
+|---|---|---|---|---|
+| **Claude Code** | Immediate (`CLAUDE.md` imports it) | Immediate | Immediate (`.claude/skills/` auto-detected) | Once: `llm-wiki setup-agent claude` |
+| **Codex** | Immediate (reads the standard file) | Immediate | Once: `llm-wiki setup-agent codex` | Included in that command |
+| **Antigravity (`agy`)** | Immediate | Immediate | Immediate (`.agents/skills/` from init) | Once: `llm-wiki setup-agent agy` |
+
+```console
+$ cd Project-X && claude
+> /wiki-ingest                  # = llm-wiki ingest
+> /wiki-compile                 # = llm-wiki compile
+> /wiki-audit                   # = llm-wiki audit
+> clean up the inbox and compile     # natural language works the same way
+```
+
+Edit rules in `AGENTS.md` only (`CLAUDE.md` is a single import line).
+
+### C. MCP (external AI assistants — queries, Q&A, comments)
+
+A tool-neutral doorway for MCP clients such as Claude Code, Codex, Antigravity, and OpenClaw.
+The server speaks standard MCP over stdio, so **any MCP-capable client** can connect. When the
+client launches the server from outside the project folder (global registration), pass
+`--project`.
+
+**Claude Code** (register from the project folder):
+
+```console
+$ cd Project-X
+$ claude mcp add llm-wiki -- llm-wiki serve-mcp
+```
+
+**Codex** (add to `~/.codex/config.toml`):
+
+```toml
+[mcp_servers.llm-wiki]
+command = "llm-wiki"
+args = ["serve-mcp", "--project", "/absolute/path/Project-X"]
+```
+
+**Antigravity CLI (`agy`)** — supports per-project configuration, so servers do not pile up
+globally. Create `.agents/mcp_config.json` in the project root and it is visible only there
+(`--project` is unnecessary because the server runs in the project folder):
+
+```json
+{"mcpServers": {"llm-wiki": {"command": "llm-wiki", "args": ["serve-mcp"]}}}
+```
+
+To register globally, put the same shape in `~/.gemini/config/mcp_config.json` and add
+`"--project", "<absolute path>"` to `args`.
+
+> With several projects: Claude Code (`claude mcp add` defaults to `local` scope) and
+> Antigravity (`.agents/mcp_config.json`) are **isolated per project**, so only one server is
+> visible per session. Codex, by contrast, only has a global config file, so registering each
+> project accumulates tools (~660 tokens per server, and duplicate `wiki_search` names confuse
+> the model).
+
+| MCP tool | What it does | Write access |
+|---|---|---|
+| `wiki_search` | Full-text search (queries are logged with the asker's real name) | — |
+| `wiki_read` | Read a document (30_Wiki only) | — |
+| `wiki_status` | Project summary | — |
+| `wiki_request_edit` | Submit an edit request → `10_Inbox/_requests/` → the next `compile` turns it into a `_Proposals` entry → a human runs `review apply` | request only |
+| `wiki_save_qa` | Submit consented new Q&A information → `10_Inbox/_qa/` (web items require URLs) | submit only |
+| `wiki_add_comment` | Append a comment (record only — never used as compile evidence) | append only |
+| `wiki_activity` | Per-member activity summary (uploads, queries, reviews, comments) | — |
+
+**By design there is no MCP tool that edits Wiki content directly** — an external assistant can
+read, request, and record, nothing more.
+
+---
+
+## LLM backends and models
+
+**You choose the model.** Mix providers (Anthropic, OpenAI, Antigravity, Google Gemini, Ollama)
+and auth methods (OAuth subscription, API key) freely; the choice persists and can be changed
+at any time.
+
+```bash
+$ llm-wiki models use                    # interactive — pick provider, model, and where to save
+$ llm-wiki models use gpt-5.6-sol        # set directly
+$ llm-wiki models use gemini-3.6-flash-high --global   # default for every project on this machine
+$ llm-wiki models use claude-haiku-4-5 --role audit     # mix per role (saves cost)
+$ llm-wiki models show                   # current settings + auth paths available right now
+$ llm-wiki models auth "api_key,oauth"   # change auth priority
+```
+
+Configuration has two layers, and the project value always wins.
+
+| Layer | File | Role |
+|---|---|---|
+| Global | `~/.llm-wiki/config.yaml` | Default model and auth order for this machine (`--global`). Offered as the default during `init` |
+| Project | `.llm-wiki/config.yaml` | This project's choice — anything unset is inherited from the global layer |
+
+**The model name determines the provider.** The registry (`~/.llm-wiki/models.yaml`) is checked
+first, then a prefix heuristic. When that is ambiguous, prefix the name (`openai/my-tuned-model`)
+or register it with `llm-wiki models add openai <model>` — new model releases never require a
+code change.
+
+| Provider | OAuth (subscription) | API key |
+|---|---|---|
+| Anthropic | `claude` CLI (Claude Code headless) | `ANTHROPIC_API_KEY` + `anthropic` |
+| OpenAI | `codex` CLI (`codex exec`) | `OPENAI_API_KEY` + `openai` |
+| Google Gemini | — (individual subscription discontinued) | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) + `google-genai` |
+| Antigravity | `agy` CLI (`agy -p`) | — (subscription only) |
+| Ollama | — | local `localhost:11434` |
+
+> The Gemini CLI's individual subscription has ended (`IneligibleTierError` — migrated to
+> Antigravity). **Use Antigravity (`agy`) for the Gemini subscription path**; direct calls such as
+> `gemini-3.6-flash` remain available through the API key path. If your organization account can
+> still use the `gemini` CLI, enable it by setting `llm.cli_path_gemini` to the executable path.
+
+Antigravity model IDs use their own scheme (`gemini-3.6-flash-high`, `claude-sonnet-4-6`,
+`gpt-oss-120b-medium`, …). They are registered under `antigravity:` so they are never confused
+with direct Gemini calls of a similar name, and `agy/<model>` forces the provider. Run
+`agy models` for the current list.
+
+Following `llm.auth_order` (default `[oauth, api_key, ollama]`), **every usable path is bundled
+in order**, and if the first one fails at run time (expired login, subscription tier problem) it
+switches to the next automatically. If you only use OAuth paths, no Python package is needed.
+Install API-key packages as required:
+
+```bash
+$ pipx inject llm-wiki openai        # or anthropic / google-genai
+$ pipx install "llm-wiki[all]"       # everything
+```
+
+Locking a sensitive project with `external_llm_allowed: false` in `.llm-wiki/config.yaml`
+**restricts it to Ollama at the code level**, regardless of the configured model
+(`model.fallback_local`).
+
+## Safeguards (all enforced in code, adversarially tested)
+
+| Rule | How it is enforced |
+|---|---|
+| AI writes `status: draft` only | Code rewrites the status of every created/updated document to draft |
+| Source material is untouchable | Write-path allowlist (writes outside 30_Wiki are blocked) |
+| Reviewed documents are protected | Updates targeting reviewed-or-higher documents are demoted to proposals (`_Proposals`) |
+| Comments are untouchable | The existing comment section is preserved verbatim on update and merge, in either language |
+| No double execution | Lock file (stale locks released automatically) |
+| Undo | Automatic backup before each run (10 kept by default) + `rollback` |
+| Approval integrity | `review apply` restores status and reviewer from the original on merge |
+| Cost visibility | Per-run tokens and cost recorded in `metrics/costs.jsonl` |
+
+## Development
+
+```console
+$ pipx install -e .                          # editable install
+$ LLM_WIKI_FAKE=response.json llm-wiki compile    # test the pipeline without an LLM
+```
+
+- Zero core dependencies — standard library only. Optional extras: `[pdf]`, `[anthropic]`,
+  `[openai]`, `[gemini]`, `[all]`
+- Layout: `core.py` (paths, hashing, manifest, lock, backup, heading constants) /
+  `*_cmd.py` (commands) / `backends.py` (LLM) / `templates/project/` (the template pack init installs)
+- Test basis: the 54 P0 scenarios in the lab document `SCENARIOS.md`
+- Versioning: semantic versioning — history in `CHANGELOG.md`, check with `llm-wiki --version`,
+  a git tag (`v0.x.y`) per release
+
+---
+
+<a id="한국어"></a>
+
+# 한국어
+
+[English](#gist-hur-group-llm-wiki) · **한국어**
+
 > **GIST 기계로봇공학과 HUR Group(허필원 교수 연구실)의 연구실 프로젝트별 지식 편찬 시스템** —
 > 원자료(논문 PDF·회의록·연구계획서·Q&A)를 넣으면 AI가 **파일·페이지 단위 출처가 달린**
 > Markdown Wiki를 편찬하고, 연구자가 검토·승인한다.
@@ -115,6 +478,33 @@ $ llm-wiki audit                   # ⑥ 품질 감사 (링크·페이지·statu
 ```
 
 문제가 생기면: `llm-wiki diff [실행ID]`로 변경 확인 → `llm-wiki rollback [실행ID]`로 복원.
+
+---
+
+## 출력 언어 (한국어 / English)
+
+`init` 때 `ko`(기본) 또는 `en`을 고른다. 이 선택은 문서 본문뿐 아니라 **섹션 제목까지** 결정한다.
+
+```console
+  Wiki 출력 언어 (ko=한국어 / en=English) [ko]: en
+```
+
+| 언어 | 문서 템플릿 | 섹션 제목 예 |
+|---|---|---|
+| `ko` | `wiki-doc.ko.md` | `## 요약` `## 근거` `## 코멘트` |
+| `en` | `wiki-doc.en.md` | `## Summary` `## Sources` `## Comments` |
+
+**섹션 제목은 사람이 읽는 글이면서 동시에 코드가 파싱하는 스키마다.** 코멘트 섹션 보존,
+출처 누락 검사, Q&A 실명 귀속, 편찬 요청 파싱이 전부 이 제목을 기준으로 동작한다.
+그래서 제목은 `core.HEADINGS` 상수와 템플릿이 같은 값을 쓰고, `compile` 프롬프트가
+"템플릿의 제목을 글자 그대로 쓰라"고 지시한다.
+
+**읽을 때는 두 언어를 모두 인식한다** — 프로젝트 중간에 언어를 바꾸거나 문서가 섞여도
+코멘트 보존 같은 안전장치가 풀리지 않는다. 다만 이미 편찬된 문서와 섞이므로
+**언어는 프로젝트 생성 시점에 정하고 유지하는 것을 권한다.**
+
+검색도 두 언어를 함께 처리한다: 한글 토큰은 조사·어미를, 영어 토큰은 복수형·시제
+접미사를 떼어 접두 검색으로 넘긴다 (형태소 분석기 없이 접미사 사전으로 근사 — 의존성 0 유지).
 
 ---
 
@@ -312,7 +702,7 @@ $ pipx install "llm-wiki[all]"       # 전부
 | AI는 `status: draft`만 | 생성·갱신 문서의 status를 코드가 draft로 치환 |
 | 원자료 불가침 | 쓰기 경로 화이트리스트 (30_Wiki 밖 쓰기 차단) |
 | 검토 문서 보호 | reviewed 이상 대상의 update를 제안(`_Proposals`)으로 자동 강등 |
-| 코멘트 불가침 | 갱신·병합 시 기존 `## 코멘트` 섹션 원본 보존 |
+| 코멘트 불가침 | 갱신·병합 시 기존 코멘트 섹션 원본 보존 (두 언어 모두 인식) |
 | 이중 실행 방지 | lock 파일 (stale lock 자동 해제) |
 | 되돌리기 | 실행 전 자동 백업 (기본 10회 보관) + `rollback` |
 | 승인 무결성 | `review apply` 병합 시 status·reviewer를 원문 값으로 복원 |

@@ -6,10 +6,12 @@
 """
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
-from .core import SOURCE_TYPES, Project, nfc, require_project, safe_name, sha256_file, today
+from .core import (SOURCE_TYPES, Project, field_pattern, nfc, require_project,
+                   safe_name, sha256_file, today)
 
 SKIP_NAMES = {".gitkeep", ".DS_Store"}
 
@@ -31,10 +33,9 @@ def _guess_type(name: str) -> str:
 
 def _qa_asker(path: Path) -> str:
     """Q&A 제출물의 귀속은 폴더가 아니라 파일에 적힌 질문자다 (F10.x 실명 귀속)."""
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines()[:10]:
-        if line.startswith("- 질문자:"):
-            return nfc(line.split(":", 1)[1].strip()) or "unknown"
-    return "unknown"
+    head = path.read_text(encoding="utf-8", errors="replace")
+    m = re.search(rf"^-\s*(?:{field_pattern('asker')})\s*:\s*(.+)$", head, re.M)
+    return nfc(m.group(1).strip()) if m and m.group(1).strip() else "unknown"
 
 
 def _members(proj: Project) -> set[str]:

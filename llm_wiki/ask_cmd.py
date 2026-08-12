@@ -19,11 +19,11 @@ from datetime import datetime
 from pathlib import Path
 
 from . import backends, search_cmd
-from .core import Project, require_project, today, unique_path
+from .core import (LANG_NAME, Project, field, heading, heading_pattern,
+                   lang_of, require_project, today, unique_path)
 
 DOC_CHARS = 6000        # 문서 하나에서 프롬프트에 넣을 최대 길이
 TOTAL_CHARS = 40000     # 근거 전체 상한
-BG_HEADING = "## 모델 배경지식 (검증 필요)"
 
 PROMPT = """너는 연구실 Wiki 질의응답 도우미다. 아래 **Wiki 발췌만을 근거로** 질문에 답한다.
 
@@ -41,7 +41,7 @@ PROMPT = """너는 연구실 Wiki 질의응답 도우미다. 아래 **Wiki 발�
   이 섹션의 각 항목은 `- ` 로 시작하는 한 줄짜리 사실 진술이어야 한다 (검증 가능한 형태).
   덧붙일 배경지식이 없으면 이 섹션 자체를 쓰지 마라.
 - status가 draft인 근거를 쓸 때는 해당 문장에 (draft) 를 표시하라 — 미검토 내용이다.
-- 한국어로, 군더더기 없이. 인사말·요약 재진술 금지."""
+- 답변 언어: **{lang_name}**. 군더더기 없이. 인사말·요약 재진술 금지."""
 
 NO_CONTEXT_PROMPT = """너는 연구실 Wiki 질의응답 도우미다.
 아래 질문에 대해 **Wiki에서 근거 문서를 하나도 찾지 못했다**.
@@ -55,7 +55,7 @@ NO_CONTEXT_PROMPT = """너는 연구실 Wiki 질의응답 도우미다.
   {bg}
   각 항목은 `- ` 로 시작하는 한 줄짜리 사실 진술.
 - 프로젝트 고유 사실(실험값·결정·인물)은 배경지식으로 답할 수 없다. 모른다고 하라.
-- 한국어로, 군더더기 없이."""
+- 답변 언어: **{lang_name}**. 군더더기 없이."""
 
 
 def _asker(args) -> str:
@@ -84,10 +84,10 @@ def _context(proj: Project, hits: list[dict]) -> tuple[str, list[dict]]:
 
 def _bg_items(answer: str) -> list[str]:
     """답변에서 '모델 배경지식' 섹션의 항목만 뽑는다 — 승격 후보는 이것뿐이다."""
-    idx = answer.find(BG_HEADING)
-    if idx < 0:
+    m = re.search(rf"^#{{1,6}}\s*(?:{heading_pattern('background')})\s*$", answer, re.M)
+    if not m:
         return []
-    tail = answer[idx + len(BG_HEADING):]
+    tail = answer[m.end():]
     tail = re.split(r"\n#{1,6} ", tail)[0]          # 다음 제목 전까지
     return [ln.strip()[2:].strip() for ln in tail.splitlines()
             if ln.strip().startswith(("- ", "* "))]
@@ -97,10 +97,12 @@ def _save_qa(proj: Project, question: str, asker: str, items: list[str]) -> Path
     """MCP wiki_save_qa와 동일한 형식·경로 — ingest → compile 이 이어받는다."""
     fn = unique_path(proj.root / "10_Inbox" / "_qa",
                      f"{today()}-{datetime.now().strftime('%H%M%S')}-qa")
-    body = [f"# Q&A 세션 ({today()})", f"- 질문자: {asker}",
-            f"- 질문: {question}", "- 경로: llm-wiki ask (사람 동의 후 저장)", ""]
+    lg = lang_of(proj.config())
+    body = [f"# Q&A ({today()})", f"- {field(lg, 'asker')}: {asker}",
+            f"- {field(lg, 'question')}: {question}",
+            f"- {field(lg, 'via')}: llm-wiki ask", ""]
     for i, it in enumerate(items, 1):
-        body += [f"## 항목 {i} [prior_knowledge]", it, ""]
+        body += [f"## {heading(lg, 'item')} {i} [prior_knowledge]", it, ""]
     fn.write_text("\n".join(body), encoding="utf-8")
     return fn
 
@@ -136,16 +138,21 @@ def cmd_ask(args) -> None:
         raise SystemExit("질문을 입력하세요: llm-wiki ask \"발목 강성은 어떻게 정했나\"")
     asker = _asker(args)
 
+    cfg = proj.config()
+    lang = lang_of(cfg)
+    bg = f"## {heading(lang, 'background')}"
     hits = search_cmd.query(proj, question, include_draft=not args.no_draft,
                             limit=args.top)
     context, used = _context(proj, hits)
-    backend = backends.resolve(proj.config(), "compile")
+    backend = backends.resolve(cfg, "compile")
 
     if used:
-        prompt = PROMPT.format(question=question, context=context, bg=BG_HEADING)
+        prompt = PROMPT.format(question=question, context=context, bg=bg,
+                               lang_name=LANG_NAME[lang])
         print(f"근거 {len(used)}건 · 백엔드 {backend.describe()}\n")
     else:
-        prompt = NO_CONTEXT_PROMPT.format(question=question, bg=BG_HEADING)
+        prompt = NO_CONTEXT_PROMPT.format(question=question, bg=bg,
+                                          lang_name=LANG_NAME[lang])
         print(f"Wiki 근거 0건 · 백엔드 {backend.describe()}")
         print("(검색으로 관련 문서를 찾지 못했습니다 — 배경지식만으로 답합니다)\n")
 
