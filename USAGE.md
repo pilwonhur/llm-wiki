@@ -75,7 +75,7 @@ built-in SQLite, and snapshots use a built-in backup, so Git is not required.
 ```console
 $ pipx install "git+https://github.com/pilwonhur/llm-wiki.git"
 $ llm-wiki --version
-llm-wiki 0.7.0
+llm-wiki 0.7.1
 ```
 
 If your default `python3` is older than 3.12, point pipx at a newer one:
@@ -950,33 +950,359 @@ Typical nightly batch:
 
 ## 16. Working with agent CLIs
 
-### What the slash commands actually are
+Everything in the previous sections can be done conversationally from Claude Code, Codex, or
+Antigravity. This section shows what those sessions actually look like.
+
+### 16.1 What the slash commands actually are
 
 `/wiki-compile` is **not MCP**. It is a prompt file that tells the agent to run the `llm-wiki`
 CLI. The result is identical to typing the command yourself, and every code-level safeguard
-applies. Install the global adapters once:
+applies. The agent's job is the conversation around it: explaining results, deciding what to do
+next, and doing the reading you would otherwise do by hand.
 
-```console
-$ llm-wiki setup-agent claude     # or: codex / agy / all
-✓ Claude Code: 전역 /wiki-init 스킬 → ~/.claude/skills/wiki-init
-```
-
-| Agent | Rules (AGENTS.md) | Natural language | `/wiki-*` | `/wiki-init` |
+| Agent | Rules (AGENTS.md) | Natural language | `/wiki-*` commands | `/wiki-init` (new folders) |
 |---|---|---|---|---|
-| Claude Code | Immediate (`CLAUDE.md` imports it) | Immediate | Immediate (`.claude/skills/`) | `llm-wiki setup-agent claude` |
-| Codex | Immediate | Immediate | `llm-wiki setup-agent codex` | Included |
-| Antigravity (`agy`) | Immediate | Immediate | Immediate (`.agents/skills/`) | `llm-wiki setup-agent agy` |
+| Claude Code | Immediate (`CLAUDE.md` imports it) | Immediate | Immediate (`.claude/skills/`, installed by `init`) | `llm-wiki setup-agent claude` |
+| Codex | Immediate | Immediate | `llm-wiki setup-agent codex` | Included in that command |
+| Antigravity (`agy`) | Immediate | Immediate | Immediate (`.agents/skills/`, installed by `init`) | `llm-wiki setup-agent agy` |
+
+Four project commands are installed by `init`: `/wiki-ingest`, `/wiki-compile`, `/wiki-audit`,
+`/wiki-ask`. `/wiki-init` is global because new folders have no project skills yet:
 
 ```console
-$ cd Project-Exo && claude
-> /wiki-ingest                 # = llm-wiki ingest
-> /wiki-compile                # = llm-wiki compile
-> /wiki-audit                  # = llm-wiki audit
-> /wiki-ask                    # = llm-wiki ask
-> clean up the inbox and compile, then tell me what changed
+$ llm-wiki setup-agent claude     # or: codex / agy / all — once per machine
+✓ Claude Code: 전역 /wiki-init 스킬 → ~/.claude/skills/wiki-init
+설치는 컴퓨터당 1회면 충분합니다. 업데이트 후에는 다시 실행하면 갱신됩니다.
 ```
 
-Headless, for scripts:
+### 16.2 Starting a session
+
+Log in to Claude Code once (`claude` walks you through it), then open the project folder:
+
+```console
+$ cd ~/research/Project-Exo
+$ claude
+```
+
+The agent reads `CLAUDE.md` (one line importing `AGENTS.md`) on start, so it already knows the
+project rules — source material is untouchable, it may only write `draft`, reviewed documents
+get proposals, the comment section is off limits, and it must not leave the project folder.
+
+Ask it to orient itself:
+
+```
+> what's the state of this project?
+
+I'll check the project status.
+
+  llm-wiki status
+
+프로젝트: Adaptive exoskeleton control for hemiplegic gait
+원자료: 4건 (미처리 2건)
+Wiki: draft 5, reviewed 4
+제안 대기: 1건 / 백업: 3회분
+
+Here's where things stand:
+
+- **2 sources waiting to be compiled** — they were ingested but `compile` hasn't run yet
+- **5 drafts need your review**, 4 documents are already reviewed
+- **1 proposal is waiting** for approval — that means compile wanted to change a
+  reviewed document and was blocked, so it filed a proposal instead
+
+Want me to compile the two pending sources first, or look at the proposal?
+```
+
+### 16.3 The four project commands
+
+**`/wiki-ingest`** — intake:
+
+```
+> /wiki-ingest
+
+  llm-wiki ingest --yes
+
+✓ 등록 2 / 중복 1 / 보류 0
+  - Jane Kim/kim2026_adaptive_gait.pdf → 20_Sources/Papers/kim2026_adaptive_gait.pdf (paper, Jane Kim)
+  - Jane Kim/meeting_2026-08-19.md → 20_Sources/Meeting-Notes/meeting_2026-08-19.md (meeting, Jane Kim)
+  중복(미이동): Jane Kim/lee2025_sea_design.pdf (기존: 20_Sources/Papers/lee2025_sea_design.pdf)
+
+Registered 2 files, both attributed to Jane Kim.
+
+One duplicate: `lee2025_sea_design.pdf` is already in the wiki (matched by hash, not
+filename), so it was left in the Inbox rather than registered twice. You can delete that
+copy safely.
+
+Next step is `/wiki-compile` to turn the two new sources into wiki documents.
+```
+
+**`/wiki-compile`** — compile:
+
+```
+> /wiki-compile
+
+  llm-wiki compile
+
+✓ 백업 20260819-140322 | 백엔드 oauth-anthropic/claude-opus-5 | 대상 2건
+  · kim2026_adaptive_gait.pdf 편찬 중...
+  · meeting_2026-08-19.md 편찬 중...
+
+✓ 편찬 완료 — 산출 4건, 실패 0건, 토큰 in 52104 / out 11233 / $0.5240
+  - 생성: 30_Wiki/Concepts/Adaptive Impedance Control.md
+  - 생성: 30_Wiki/Findings/Carbon Patella Support.md
+  - 갱신: 30_Wiki/Methods/Gait Phase Estimation.md
+  - 제안: 30_Wiki/_Proposals/Series Elastic Actuator-20260819-140322.md
+
+Compiled both sources for $0.52. Three things to know:
+
+1. **Two new documents** from the paper and the meeting notes.
+2. **`Gait Phase Estimation` was updated in place** — it was still `draft`, so the compiler
+   could edit it directly.
+3. **`Series Elastic Actuator` produced a proposal instead of an edit.** That document is
+   `reviewed`, so the compiler is not allowed to touch it. The proposal is waiting for you.
+
+A backup was taken before any of this (`20260819-140322`), so `llm-wiki rollback
+20260819-140322` undoes the whole run.
+```
+
+**`/wiki-audit`** — quality check:
+
+```
+> /wiki-audit
+
+  llm-wiki audit
+
+✓ 감사 완료 — 발견 2건 (리포트: .llm-wiki/audit/2026-08-19-1412.md)
+  [깨진 wikilink] 1건
+    - Concepts/Adaptive Impedance Control.md → [[Gait Phase Estimator]]
+  [페이지 범위 초과 인용] 1건
+    - Findings/Carbon Patella Support.md → kim2026_adaptive_gait.pdf#page=48 (총 32쪽)
+
+Two issues, and they're different in kind:
+
+**The broken link is cosmetic.** The document links `[[Gait Phase Estimator]]` but the actual
+document is `Gait Phase Estimation`. I can fix that wording — it doesn't change any claim.
+
+**The page citation is a real problem.** It cites page 48 of a 32-page PDF, which means the
+citation is wrong and the claim behind it is unverified. That needs you to open the paper and
+find the real page — I shouldn't guess which page it meant.
+
+Want me to fix the link, and leave the citation for you?
+```
+
+**`/wiki-ask`** — grounded questions:
+
+```
+> /wiki-ask why did we pick carbon for the patella support?
+
+  llm-wiki ask "why did we pick carbon for the patella support?" --asker "Jane Kim"
+
+근거 1건 · 백엔드 oauth-anthropic/claude-opus-5
+
+Carbon fiber was adopted based on fatigue test round 2, which showed 1.8x the service life
+of the aluminum design [1] (draft).
+
+근거
+  [1] 30_Wiki/Findings/Carbon Patella Support.md  (draft)
+  ! draft 근거가 포함됐습니다 — 미검토 내용입니다.
+
+The answer rests on a **draft** document — compiled from the 8/19 meeting notes but not yet
+verified against the original by a human. Treat the 1.8x figure as unconfirmed until someone
+reviews that document.
+```
+
+### 16.4 A full review session
+
+Reviewing is where an agent earns its place — it can open every cited page and cross-check for
+you, which is the tedious part of promoting `draft` to `reviewed`.
+
+```
+> I want to review the drafts. Start with the newest one and walk me through the evidence.
+
+  llm-wiki review
+
+검토 대기 draft 5건 (오래된 순): ...
+
+I'll take `Findings/Carbon Patella Support.md` (created today). Reading the document and its
+cited source.
+
+  Read 30_Wiki/Findings/Carbon Patella Support.md
+  Read 20_Sources/Meeting-Notes/meeting_2026-08-19.md
+
+Here's the check, claim by claim:
+
+| Claim in the document | Cited source | Verdict |
+|---|---|---|
+| Patella support switches aluminum → carbon | meeting 8/19, "Decisions" | ✓ stated verbatim |
+| 1.8x fatigue life vs aluminum | meeting 8/19, "Decisions" | ✓ stated verbatim |
+| Round 2 of fatigue testing | meeting 8/19 | ✓ stated |
+| "improves overall durability and reliability" | — | ⚠ not in the source |
+
+The first three are solid. The last sentence is an inference the compiler added — reasonable,
+but not something the meeting notes say. Two options: delete that sentence, or keep it and
+mark it as background knowledge.
+
+> delete it, then mark the document reviewed under my name
+
+I'll remove the unsupported sentence. I can't set the status myself — `reviewed` is
+human-only and the code would reject it from me — so I'll make the edit and show you the
+exact frontmatter change to make.
+
+  Edit 30_Wiki/Findings/Carbon Patella Support.md
+
+Removed: "This change improves overall durability and reliability of the assembly."
+
+Now change the frontmatter yourself (three lines):
+
+  status: draft      →  status: reviewed
+  reviewer:          →  reviewer: Jane Kim
+  updated: 2026-08-19 →  updated: 2026-08-19
+
+Open it in your editor, or say the word and I'll make that edit too — but understand that
+when I do it, it's your judgment being recorded, not mine.
+```
+
+That last exchange is the point of the whole design. The agent can *do* the edit — it has file
+access — but the system is built so that promotion is a human act. Let the agent gather evidence
+and prepare the change; you decide.
+
+### 16.5 Handling a proposal conversationally
+
+```
+> there's a proposal waiting. what does it want to change?
+
+  Read 30_Wiki/_Proposals/Series Elastic Actuator-20260819-140322.md
+
+The proposal targets `30_Wiki/Concepts/Series Elastic Actuator.md`, which is currently
+`reviewed`, and comes from the 8/19 meeting notes.
+
+**What it proposes**: add that the SEA spring constant was re-measured at 4.2 kN/m in
+round 2, replacing the 3.8 kN/m figure currently in the document.
+
+**Why it's a proposal and not an edit**: the target is `reviewed`, so the compiler is blocked
+from editing it directly. This is rule 3.
+
+This one changes a number in a reviewed document, so I'd suggest checking the meeting notes
+before approving.
+
+  Read 20_Sources/Meeting-Notes/meeting_2026-08-19.md
+
+Confirmed — the notes say "spring constant re-measured: 4.2 kN/m (round 2, replaces 3.8)".
+The proposal is faithful to the source.
+
+> apply it
+
+  llm-wiki review apply "Series Elastic"
+
+✓ 반영 완료: 30_Wiki/Concepts/Series Elastic Actuator.md (status reviewed 유지)
+  확인: llm-wiki diff 20260819-142905 / 되돌리기: llm-wiki rollback 20260819-142905
+
+Applied. The document kept `status: reviewed` and its original reviewer — the merge cannot
+promote or demote a document, and your comment section came through untouched.
+
+If the merge went wrong, `llm-wiki rollback 20260819-142905` restores it.
+```
+
+### 16.6 Natural language, and where it differs
+
+The agent also works without slash commands:
+
+```
+> two new papers are in my inbox. process them and tell me if anything conflicts with
+> what we already have.
+```
+
+A capable agent will run `llm-wiki ingest`, then `llm-wiki compile`, then read the new
+documents against the existing ones and report conflicts. That is genuinely more than the CLI
+does on its own.
+
+But there is one difference worth internalizing:
+
+| You type | What runs | Enforced by |
+|---|---|---|
+| `/wiki-compile` | `llm-wiki compile` | **Code** — lock, backup, path allowlist, draft forcing, comment preservation |
+| "process the inbox and compile" | The agent *may* run the CLI, or may do the work by editing files itself | `AGENTS.md` — **prompt-level only** |
+
+The `.llm-wiki/workflows/*.md` files exist so an agent can perform the pipeline by hand when the
+CLI is not installed. That fallback is why an agent might edit files directly. When it does, the
+code-level guarantees do not apply — only the rules in `AGENTS.md`, which are instructions, not
+enforcement.
+
+**So: to get the guaranteed path, name the command.** *"Run `llm-wiki compile`"* is unambiguous;
+*"compile the wiki"* is not. The skills are written to prefer the CLI (*"if the llm-wiki CLI is
+installed, run it instead of performing the procedure"*), which is why slash commands are the
+safer habit.
+
+### 16.7 Codex and Antigravity
+
+Same model, same commands, different setup step:
+
+```console
+# Codex — install the prompts once, then use them anywhere
+$ llm-wiki setup-agent codex
+✓ Codex: /wiki-ask /wiki-audit /wiki-compile /wiki-ingest /wiki-init 프롬프트 → ~/.codex/prompts
+
+$ cd Project-Exo && codex
+> /wiki-compile
+```
+
+```console
+# Antigravity — project skills come from init; global ones once
+$ llm-wiki setup-agent agy
+✓ Antigravity(agy): /wiki-ask /wiki-audit /wiki-compile /wiki-ingest /wiki-init 스킬
+  → ~/.gemini/antigravity-cli/skills
+
+$ cd Project-Exo && agy
+> /wiki-compile
+```
+
+All three read `AGENTS.md` directly — that file is the single source of rules, and `CLAUDE.md`
+is just one import line pointing at it. Edit rules in `AGENTS.md` only.
+
+### 16.8 Creating a project by conversation
+
+New folders have no project skills yet, which is why `/wiki-init` is installed globally:
+
+```console
+$ mkdir Project-Neuro && cd Project-Neuro && claude
+```
+
+```
+> /wiki-init
+
+I'll set up an llm-wiki project here. First, a few questions:
+
+1. Full project name?
+2. One-line purpose?
+3. Members (comma separated)?
+4. Who is the Wiki reviewer?
+5. Output language — Korean or English?
+6. Is any material sensitive (IRB, industry NDA)? If so I'll lock it to local LLMs only.
+7. Which model should compile?
+
+> Neural correlates of gait adaptation / studying cortical activity during split-belt
+> walking / Pilwon Hur, Daehak Lee / Daehak Lee / English / not sensitive / claude-opus-5
+
+  llm-wiki init --yes
+  ... then applying your answers to config.yaml, 00_Project/, and member folders
+
+✓ Project created. Structure: 00_Project through 90_Archive, .llm-wiki/ (config, manifest,
+workflows, backups), AGENTS.md + CLAUDE.md, skill adapters, and Inbox folders for
+Pilwon Hur and Daehak Lee.
+
+Two things worth doing before you add material:
+- Fill in `00_Project/scope.md` — the compiler reads it to judge relevance
+- Fill in `00_Project/glossary.md` — it prevents the same concept being filed twice under
+  different names
+
+Then drop files into `10_Inbox/<your name>/` and run `/wiki-ingest`.
+```
+
+Without the global skill you can still just ask: *"set up a wiki project here"* — the agent runs
+the same onboarding conversationally.
+
+### 16.9 Headless and batch
+
+Slash commands work non-interactively, which makes them usable in cron:
 
 ```console
 $ claude -p "/wiki-compile"
@@ -984,21 +1310,15 @@ $ codex exec "/wiki-compile"
 $ agy -p "/wiki-compile"
 ```
 
-### The one thing to understand about safety
+For unattended batches, prefer the plain CLI — it is faster, cheaper, and has no agent in the
+loop to improvise:
 
-There are two different paths, and they have different guarantees:
+```cron
+0 3 * * *  cd /path/Project-Exo && llm-wiki ingest --yes && llm-wiki compile && llm-wiki notify
+```
 
-| You type | What runs | Enforced by |
-|---|---|---|
-| `/wiki-compile` | `llm-wiki compile` | **Code** — lock, backup, path allowlist, draft forcing, comment preservation |
-| "clean up the inbox and compile" | The agent *may* run the CLI, or may edit files itself | `AGENTS.md` rules — **prompt-level only** |
-
-An agent with file-write access that ignores `AGENTS.md` has no code stopping it. If you want
-the guaranteed path, name the command: *"run `llm-wiki compile`"*.
-
-`AGENTS.md` is the single source of rules. Edit it there; `CLAUDE.md` is one import line.
-
----
+Use the agent when you want judgment (review, conflict-checking, explanation); use the CLI when
+you want a deterministic pipeline.
 
 ## 17. Working through MCP
 

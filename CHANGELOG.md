@@ -9,6 +9,16 @@ GIST HUR Group LLM-Wiki의 버전별 변경 이력. 형식은 [Keep a Changelog]
 
 업데이트: `pipx reinstall llm-wiki` / 버전 확인: `llm-wiki --version`
 
+## [0.7.1] — 2026-08-12
+
+### Added
+- **`/wiki-ask` 스킬을 Claude Code·Codex에도 설치** — 0.5.0에서 Antigravity에만 만들어
+  도구별로 명령 수가 어긋나 있었다. 이제 네 도구 모두 프로젝트 명령 4종
+  (`/wiki-ingest`·`/wiki-compile`·`/wiki-audit`·`/wiki-ask`) + 전역 `/wiki-init` 로 동일
+- `USAGE.md` §16을 에이전트 CLI 실사용 예시로 전면 확장 — 세션 시작, 명령 4종의 실제
+  대화, 검토 세션(근거 대조 → 승격은 사람이), 제안 처리, 자연어와 슬래시 명령의
+  안전장치 차이, Codex·Antigravity, 대화형 프로젝트 생성, 헤드리스 배치
+
 ## [0.7.0] — 2026-08-12
 
 출력 언어(한국어 / English)를 실제로 지원한다. 그동안 `init`이 묻고 config에 저장만 하던
