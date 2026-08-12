@@ -27,6 +27,10 @@ STATUS_VALUES = {"draft", "reviewed", "approved", "deprecated", "disputed"}
 # AI(편찬기)가 쓸 수 있는 경로 화이트리스트 (프로젝트 루트 기준 접두사)
 AI_WRITABLE = ("30_Wiki", ".llm-wiki")
 UNSAFE_CHARS = re.compile(r"[\[\]#^|]")  # Obsidian wikilink 충돌 문자 (F1.7)
+# 전역 사용자 설정 — 모델·인증 기본값과 모델 레지스트리를 컴퓨터 단위로 보관한다.
+GLOBAL_DIR = Path.home() / ".llm-wiki"
+GLOBAL_CONFIG = GLOBAL_DIR / "config.yaml"
+GLOBAL_REGISTRY = GLOBAL_DIR / "models.yaml"
 
 
 def nfc(s: str) -> str:
@@ -57,9 +61,16 @@ def safe_name(name: str) -> str:
 
 
 def find_project_root(start: Path | None = None) -> Path | None:
-    """`.llm-wiki`를 가진 가장 가까운 상위 폴더."""
+    """`.llm-wiki`를 가진 가장 가까운 상위 폴더.
+
+    홈 디렉터리는 제외한다 — `~/.llm-wiki`는 전역 설정·레지스트리 보관소라서
+    그대로 두면 홈 아래 아무 곳에서나 홈이 프로젝트로 잡힌다.
+    """
     cur = (start or Path.cwd()).resolve()
+    home = Path.home().resolve()
     for p in [cur, *cur.parents]:
+        if p == home:
+            continue
         if (p / ".llm-wiki").is_dir():
             return p
     return None
@@ -107,6 +118,78 @@ def load_yamlish(path: Path) -> dict:
     return data
 
 
+def update_yamlish(path: Path, updates: dict) -> None:
+    """yamlish 파일 부분 갱신 — 기존 줄·주석·순서를 보존하고 지정 키만 교체/추가한다.
+
+    updates 예: {"model": {"compile": "claude-opus-5"}, "external_llm_allowed": False}
+    save_config는 전체를 다시 쓰므로 주석이 사라진다. 설정 한 항목만 바꿀 때는 이쪽을 쓴다.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    pending = {k: (dict(v) if isinstance(v, dict) else v) for k, v in updates.items()}
+
+    out: list[str] = []
+    section_end: dict[str, int] = {}   # 섹션명 → 그 블록의 마지막 줄 인덱스(out 기준)
+    section = None
+    for raw in lines:
+        stripped = raw.strip()
+        code = "" if stripped.startswith("#") else raw.split("#", 1)[0].rstrip()
+        if not code.strip():
+            out.append(raw)
+            continue
+        indent = len(code) - len(code.lstrip())
+        key, _, val = code.strip().partition(":")
+        if indent == 0:
+            section = key if not val.strip() else None
+            if key in pending and not isinstance(pending[key], dict):
+                out.append(f"{key}: {_fmt(pending.pop(key))}")
+            elif section is not None:
+                out.append(raw)
+                section_end[section] = len(out) - 1
+            else:
+                out.append(raw)
+            continue
+        if section is not None and isinstance(pending.get(section), dict) and key in pending[section]:
+            out.append(f"  {key}: {_fmt(pending[section].pop(key))}")
+        else:
+            out.append(raw)
+        if section is not None:
+            section_end[section] = len(out) - 1
+
+    # 기존 섹션에 남은 신규 키를 그 블록 끝에 삽입 (뒤에서부터 — 인덱스 보존)
+    existing = [s for s, kv in pending.items() if isinstance(kv, dict) and s in section_end]
+    for s in sorted(existing, key=lambda s: section_end[s], reverse=True):
+        at = section_end[s]
+        out[at + 1:at + 1] = [f"  {k}: {_fmt(v)}" for k, v in pending.pop(s).items()]
+
+    # 파일에 아예 없던 키·섹션은 끝에 추가
+    for k, v in pending.items():
+        if isinstance(v, dict):
+            if not v:
+                continue
+            out.append(f"{k}:")
+            out.extend(f"  {k2}: {_fmt(v2)}" for k2, v2 in v.items())
+        else:
+            out.append(f"{k}: {_fmt(v)}")
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+def merge_config(base: dict, over: dict) -> dict:
+    """2단 깊이 병합 — over(프로젝트)가 base(전역 기본값)를 항목 단위로 덮어쓴다."""
+    merged = {k: (dict(v) if isinstance(v, dict) else v) for k, v in base.items()}
+    for k, v in over.items():
+        if isinstance(v, dict) and isinstance(merged.get(k), dict):
+            merged[k].update(v)
+        else:
+            merged[k] = v
+    return merged
+
+
+def global_config() -> dict:
+    """전역 기본 설정 (~/.llm-wiki/config.yaml) — 프로젝트마다 다시 정하지 않도록."""
+    return load_yamlish(GLOBAL_CONFIG)
+
+
 def dump_yamlish(data: dict) -> str:
     out = []
     for k, v in data.items():
@@ -140,6 +223,15 @@ class Project:
         return self.meta / "config.yaml"
 
     def config(self) -> dict:
+        """전역 기본값(~/.llm-wiki/config.yaml) 위에 프로젝트 설정을 덮은 결과.
+
+        프로젝트가 명시한 값이 항상 이긴다 — external_llm_allowed: false 같은
+        안전 설정을 전역 기본값이 뒤집을 수 없다 (N7).
+        """
+        return merge_config(global_config(), load_yamlish(self.config_path))
+
+    def raw_config(self) -> dict:
+        """전역 병합 없이 프로젝트 파일에 실제로 쓰인 값만 (설정 출처 표시용)."""
         return load_yamlish(self.config_path)
 
     def save_config(self, cfg: dict) -> None:

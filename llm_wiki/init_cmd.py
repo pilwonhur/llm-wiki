@@ -22,6 +22,54 @@ def _ask(prompt: str, default: str = "") -> str:
     return val or default
 
 
+def _default_model() -> str:
+    """전역 기본값(~/.llm-wiki/config.yaml)이 있으면 그것을 — 한 번 정하면 다음 프로젝트도 그대로."""
+    from . import backends
+    from .core import global_config
+    return backends.model_for(global_config(), "compile")
+
+
+def _global_local() -> str:
+    from . import backends
+    from .core import global_config
+    return (global_config().get("model") or {}).get("fallback_local") or backends.DEFAULT_LOCAL
+
+
+def _global_auth_order() -> list:
+    from .core import global_config
+    return ((global_config().get("llm") or {}).get("auth_order")
+            or ["oauth", "api_key", "ollama"])
+
+
+def _ask_model(default: str) -> str:
+    """등록된 모델을 공급자별로 보여주고 고르게 한다. 새 이름을 쓰면 레지스트리에 등록."""
+    from . import backends
+    from .misc_cmd import _save_registry
+    reg = backends.registry()
+    print("\n  등록된 모델 (공급자별 — 사용 가능한 인증 경로 표시):")
+    for prov in backends.PROVIDERS:
+        models = reg.get(prov, [])
+        if not models:
+            continue
+        st = backends.auth_status(prov)
+        avail = ("실행 중" if st.get("ollama") else "미실행") if prov == "ollama" else \
+            (" · ".join(x for x in [("OAuth" if st["oauth"] else ""),
+                                    ("API key" if st["api_key"] else "")] if x) or "설정 필요")
+        print(f"    {backends.PROVIDER_LABEL[prov]:<16} [{avail}] {', '.join(models)}")
+    print("    (새 모델명을 직접 입력하면 레지스트리에 저장됩니다. 나중에 "
+          "`llm-wiki models use` 로 언제든 변경 가능)")
+    model = _ask("편찬 모델", default)
+    try:
+        prov = backends.provider_of(model, reg)
+    except backends.BackendError as e:
+        print(f"    ! {e}")
+        return model
+    if model not in reg.get(prov, []):
+        reg.setdefault(prov, []).append(model)
+        _save_registry(reg)
+    return model
+
+
 def cmd_init(args) -> None:
     root = Path(args.path).resolve() if args.path else Path.cwd()
     root.mkdir(parents=True, exist_ok=True)
@@ -56,10 +104,10 @@ def cmd_init(args) -> None:
         answers["language"] = _ask("Wiki 출력 언어", "ko")
         sens = _ask("외부 LLM 전송 허용? (IRB·산학 등 민감 자료면 n)", "y")
         answers["external"] = sens.lower() not in ("n", "no", "아니오")
-        answers["model"] = _ask("편찬 모델", "claude-fable-5")
+        answers["model"] = _ask_model(_default_model())
     else:
         answers = {"name": root.name, "purpose": "", "members": "", "reviewer": "",
-                   "language": "ko", "external": True, "model": "claude-fable-5"}
+                   "language": "ko", "external": True, "model": _default_model()}
 
     # 3) config 작성 (신규일 때만 — 재실행 시 기존 설정 보존)
     if fresh:
@@ -68,7 +116,10 @@ def cmd_init(args) -> None:
             "language": answers["language"],
             "external_llm_allowed": answers["external"],
             "model": {"compile": answers["model"], "audit": answers["model"],
-                      "metadata": answers["model"]},
+                      "metadata": answers["model"],
+                      "fallback_local": _global_local()},
+            # 인증 경로 우선순위 — `llm-wiki models auth` 로 변경
+            "llm": {"auth_order": _global_auth_order()},
             "review": {"reviewer": answers["reviewer"] or "<TODO>",
                        "stale_draft_days": 14},
             "snapshot": {"backup_keep": 10},

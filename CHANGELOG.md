@@ -9,6 +9,45 @@ GIST HUR Group LLM-Wiki의 버전별 변경 이력. 형식은 [Keep a Changelog]
 
 업데이트: `pipx reinstall llm-wiki` / 버전 확인: `llm-wiki --version`
 
+## [0.3.0] — 2026-08-12
+
+LLM 선택권을 사용자에게. 공급자·인증 방식을 자유롭게 고르고, 한 번 정하면 유지되며,
+언제든 바꿀 수 있다.
+
+### Added
+- **다중 공급자 백엔드** — Anthropic 외에 OpenAI·Google Gemini를 OAuth(구독 CLI)와
+  API key 양쪽으로 지원. `codex exec`(OpenAI), `gemini -p`(Gemini) 헤드리스 호출과
+  `openai`·`google-genai` SDK 경로 추가. 셋 다 토큰 사용량을 기록한다
+- **`models use`** — 사용할 모델 설정. 인자 없이 실행하면 공급자·모델·저장 위치를
+  고르는 대화형. `--role`로 역할별(compile/audit/metadata) 분리, `--global`로 전 프로젝트 기본값
+- **`models show`** — 현재 유효 설정, 각 역할의 실제 호출 경로, 공급자별로 지금 쓸 수
+  있는 인증 수단(OAuth ○/× · API key ○/×)과 막힌 이유를 한 화면에
+- **`models auth <순서>`** — 인증 우선순위(`llm.auth_order`) 변경
+- **전역 기본 설정 `~/.llm-wiki/config.yaml`** — 프로젝트마다 다시 고르지 않아도 되도록.
+  프로젝트 설정이 항목 단위로 덮어쓰며, `init`은 전역값을 기본값으로 제시한다
+- **모델→공급자 자동 판별** — 레지스트리 조회 후 접두사 추정. 판별이 안 되면
+  `openai/<모델명>` 접두사 또는 `models add`로 해결 (새 모델 출시에 코드 수정 불필요)
+- **실행 중 자동 전환** — `auth_order`로 만든 후보를 묶어 두고, 앞의 경로가 실패하면
+  (로그인 만료·구독 등급 문제 등) 다음 경로로 넘어간다. 설치 여부만 보던 기존 판정의 한계 해소
+- extras 분리: `[anthropic]`·`[openai]`·`[gemini]`·`[all]` (OAuth만 쓰면 설치 불필요)
+
+### Changed
+- `init`의 모델 질문이 공급자별 등록 모델과 사용 가능한 인증 경로를 보여주고,
+  새로 입력한 모델명을 레지스트리에 저장한다 (README에 적혀 있었으나 미구현이던 동작)
+- `models` 기본 동작이 `list` → `show`
+- 백엔드 이름 `oauth-claude` → `oauth-anthropic`. 에이전트형 여부를 이름 하드코딩 대신
+  `Backend.agentic` 속성으로 판정 (codex·gemini CLI도 원자료를 직접 읽는다)
+- 모델 레지스트리가 실제로 쓰인다 — 종전에는 기록만 하고 아무도 읽지 않았음.
+  공급자 별칭(`claude`→`anthropic`, `google`→`gemini`) 정규화
+
+### Fixed
+- `find_project_root`가 홈 디렉터리를 프로젝트로 오인하던 문제 — `~/.llm-wiki`가
+  전역 설정 보관소라, 홈 아래 아무 폴더에서나 홈이 프로젝트 루트로 잡혔다
+- `BackendError`가 `SystemExit` 상속이라 `compile`의 자료별 실패 격리(`except Exception`)를
+  통과해 실행 전체를 중단시키던 문제 — `RuntimeError` 상속으로 바꾸고 CLI 최상단에서 안내 출력
+- 설정 변경이 `config.yaml`을 통째로 다시 쓰면서 주석·순서를 날리던 문제 —
+  해당 키만 교체하는 `update_yamlish` 도입
+
 ## [0.2.1] — 2026-08-12
 
 ### Fixed

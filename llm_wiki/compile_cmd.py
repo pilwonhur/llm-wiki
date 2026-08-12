@@ -163,7 +163,7 @@ def cmd_compile(args) -> None:
         return
 
     backend = backends.resolve(cfg, "compile")
-    agentic = backend.name in ("oauth-claude",)
+    agentic = backend.agentic   # 에이전트형 CLI는 원자료를 스스로 읽는다 (프롬프트에 경로만)
     keep = int((cfg.get("snapshot") or {}).get("backup_keep", 10) or 10)
     template = (proj.meta / "templates" / "wiki-doc.md").read_text(encoding="utf-8") \
         if (proj.meta / "templates" / "wiki-doc.md").exists() else ""
@@ -172,7 +172,7 @@ def cmd_compile(args) -> None:
     rid = run_id()
     try:
         proj.backup(rid, keep=keep)
-        print(f"✓ 백업 {rid} | 백엔드 {backend.name} (모델 {backend.model}) | 대상 {len(todo)}건")
+        print(f"✓ 백업 {rid} | 백엔드 {backend.describe()} | 대상 {len(todo)}건")
         ctx = _read_context(proj)
         report, failures, usage_total = [], [], {"input": 0, "output": 0, "cost_usd": 0.0}
         for src in todo:  # 순차 큐 (F2.1) — 실패해도 다음 파일 진행

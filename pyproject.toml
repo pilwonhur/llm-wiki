@@ -10,8 +10,13 @@ requires-python = ">=3.12"
 dependencies = []          # 코어는 의존성 0 (N8). 선택 기능은 extras로.
 
 [project.optional-dependencies]
-pdf = ["pypdf>=4"]         # 비 macOS 페이지 검사
-llm = ["anthropic>=0.40"]  # API key 백엔드 (다음 증분)
+pdf = ["pypdf>=4"]              # 비 macOS 페이지 검사
+# API key 백엔드 — OAuth(CLI) 경로만 쓰면 아무것도 설치할 필요 없다.
+anthropic = ["anthropic>=0.40"]
+openai = ["openai>=1.60"]
+gemini = ["google-genai>=1.0"]
+llm = ["anthropic>=0.40"]       # 하위 호환 별칭
+all = ["pypdf>=4", "anthropic>=0.40", "openai>=1.60", "google-genai>=1.0"]
 
 [project.scripts]
 llm-wiki = "llm_wiki.cli:main"

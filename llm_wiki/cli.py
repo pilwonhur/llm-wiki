@@ -39,10 +39,25 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("run_id", nargs="?")
     sp.add_argument("-v", "--verbose", action="store_true")
 
-    sp = sub.add_parser("models", help="모델 레지스트리 (~/.llm-wiki/models.yaml)")
-    sp.add_argument("action", nargs="?", choices=["list", "add", "remove"], default="list")
-    sp.add_argument("provider", nargs="?")
+    sp = sub.add_parser(
+        "models", help="LLM 모델·인증 설정 (use/show/list/add/remove/auth)",
+        description="모델 선택과 인증 경로를 설정한다. 한 번 정하면 계속 유지되고, "
+                    "언제든 다시 실행해 바꿀 수 있다.\n"
+                    "  llm-wiki models use                    대화형으로 공급자·모델 선택\n"
+                    "  llm-wiki models use gpt-5.6-sol        모델 지정 (역할 전부)\n"
+                    "  llm-wiki models use claude-haiku-4-5 --role audit\n"
+                    "  llm-wiki models use gemini-3.6-flash --global   모든 프로젝트 기본값\n"
+                    "  llm-wiki models show                   현재 설정·사용 가능 경로 확인\n"
+                    "  llm-wiki models auth 'oauth,api_key'   인증 우선순위 변경",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp.add_argument("action", nargs="?",
+                    choices=["use", "show", "list", "add", "remove", "auth"], default="show")
+    sp.add_argument("provider", nargs="?", help="공급자 (add/remove) · 모델명 (use) · 인증 순서 (auth)")
     sp.add_argument("model_id", nargs="?")
+    sp.add_argument("--role", choices=["compile", "audit", "metadata", "all"],
+                    help="적용할 역할 (기본: 전부)")
+    sp.add_argument("--global", dest="glob", action="store_true",
+                    help="이 컴퓨터의 모든 프로젝트 기본값으로 저장 (~/.llm-wiki/config.yaml)")
 
     sp = sub.add_parser("search", help="Wiki 전문 검색 (SQLite FTS5)")
     sp.add_argument("query", nargs="+")
@@ -84,10 +99,13 @@ def main(argv: list[str] | None = None) -> None:
         "notify": notify_cmd.cmd_notify,
         "setup-agent": misc_cmd.cmd_setup_agent,
     }
+    from .backends import BackendError
     try:
         dispatch[args.cmd](args)
     except KeyboardInterrupt:
         sys.exit("\n중단됨")
+    except BackendError as e:  # 백엔드 문제는 traceback 대신 사람이 읽는 안내로
+        sys.exit(f"오류: {e}")
 
 
 if __name__ == "__main__":

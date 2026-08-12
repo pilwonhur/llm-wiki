@@ -5,16 +5,10 @@ import difflib
 from datetime import date
 from pathlib import Path
 
-from .core import (Project, dump_yamlish, frontmatter, load_yamlish,
+from .core import (GLOBAL_REGISTRY, Project, dump_yamlish, frontmatter,
                    require_project, run_id, today)
 
-REGISTRY = Path.home() / ".llm-wiki" / "models.yaml"
-DEFAULT_MODELS = {
-    "claude": ["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"],
-    "openai": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
-    "gemini": ["gemini-3.6-flash", "gemini-3.1-pro-preview"],
-    "ollama": [],
-}
+REGISTRY = GLOBAL_REGISTRY
 
 
 # ---------------------------------------------------------------- review (F4.2~F4.3)
@@ -262,23 +256,186 @@ def cmd_setup_agent(args) -> None:
 
 
 # ---------------------------------------------------------------- models (F8.4)
+def _save_registry(reg: dict) -> None:
+    REGISTRY.parent.mkdir(parents=True, exist_ok=True)
+    REGISTRY.write_text(dump_yamlish({k: v for k, v in reg.items()}), encoding="utf-8")
+
+
+def _scope_path(use_global: bool):
+    """설정을 어디에 쓸지 — 전역(모든 프로젝트 기본값) 또는 현재 프로젝트."""
+    from .core import GLOBAL_CONFIG, find_project_root
+    if use_global:
+        return GLOBAL_CONFIG, "전역 기본값"
+    root = find_project_root()
+    if root is None:
+        raise SystemExit("프로젝트 폴더가 아닙니다. 전역 기본값을 바꾸려면 --global 을 쓰세요.")
+    return root / ".llm-wiki" / "config.yaml", f"프로젝트({root.name})"
+
+
+def _effective_cfg() -> tuple[dict, str]:
+    """현재 위치 기준 유효 설정 — 프로젝트 안이면 병합 결과, 밖이면 전역 기본값."""
+    from .core import find_project_root, global_config
+    root = find_project_root()
+    if root is None:
+        return global_config(), "전역 기본값"
+    return Project(root).config(), f"프로젝트({root.name})"
+
+
+def _print_status(cfg: dict, where: str) -> None:
+    from . import backends
+    print(f"현재 유효 설정 — {where}")
+    external = cfg.get("external_llm_allowed", True)
+    models = cfg.get("model") or {}
+    order = (cfg.get("llm") or {}).get("auth_order") or ["oauth", "api_key", "ollama"]
+    if not external:
+        print("  ! external_llm_allowed: false — 민감 프로젝트라 설정 모델과 무관하게 "
+              "로컬(Ollama)만 사용합니다 (N7)")
+    for role in backends.ROLES:
+        mark = "" if models.get(role) or role == "compile" else "  (compile 값 상속)"
+        try:
+            model, prov = backends.effective(cfg, role)
+            cands, blocked = backends.plan(cfg, role)
+            route = " → ".join(c.name for c in cands) or "없음"
+            note = f"  (막힘: {', '.join(blocked)})" if blocked else ""
+            print(f"  {role:9} {model:<26} [{backends.PROVIDER_LABEL.get(prov, prov)}] "
+                  f"{route}{note}{mark}")
+        except backends.BackendError as e:
+            print(f"  {role:9} {backends.model_for(cfg, role):<26} ! {e}")
+    print(f"  {'local':9} {models.get('fallback_local') or backends.DEFAULT_LOCAL}")
+    print(f"  인증 순서   {', '.join(order) if external else 'ollama (강제)'}")
+    print("\n공급자별 사용 가능 경로")
+    for prov in backends.PROVIDERS:
+        st = backends.auth_status(prov)
+        if prov == "ollama":
+            print(f"  {backends.PROVIDER_LABEL[prov]:<16} "
+                  f"{'○ 실행 중' if st['ollama'] else '× 미실행'}")
+            continue
+        print(f"  {backends.PROVIDER_LABEL[prov]:<16} "
+              f"OAuth {'○' if st['oauth'] else '×'} ({st['oauth_hint']})   "
+              f"API key {'○' if st['api_key'] else '×'} ({st['api_key_hint']})")
+
+
+def _pick_model(reg: dict) -> str | None:
+    """공급자 → 모델 대화형 선택. 목록에 없는 이름을 직접 입력하면 레지스트리에 등록."""
+    from . import backends
+    provs = list(backends.PROVIDERS)
+    print("\n공급자를 고르세요:")
+    for i, p in enumerate(provs, 1):
+        st = backends.auth_status(p)
+        avail = ("실행 중" if st.get("ollama") else "미실행") if p == "ollama" else \
+            " ".join(x for x in [("OAuth" if st["oauth"] else ""),
+                                 ("API key" if st["api_key"] else "")] if x) or "사용 가능 경로 없음"
+        print(f"  {i}) {backends.PROVIDER_LABEL[p]:<16} {avail}")
+    ans = input("번호 또는 이름: ").strip()
+    prov = provs[int(ans) - 1] if ans.isdigit() and 1 <= int(ans) <= len(provs) \
+        else backends.canon_provider(ans)
+    if prov not in backends.PROVIDERS:
+        print("알 수 없는 공급자입니다.")
+        return None
+
+    models = reg.get(prov, [])
+    print(f"\n{backends.PROVIDER_LABEL[prov]} 등록 모델:")
+    for i, m in enumerate(models, 1):
+        print(f"  {i}) {m}")
+    print("  (목록에 없으면 모델명을 직접 입력 — 레지스트리에 자동 등록됩니다)")
+    ans = input("번호 또는 모델명: ").strip()
+    if not ans:
+        return None
+    if ans.isdigit() and 1 <= int(ans) <= len(models):
+        return models[int(ans) - 1]
+    reg.setdefault(prov, [])
+    if ans not in reg[prov]:
+        reg[prov].append(ans)
+        _save_registry(reg)
+        print(f"✓ 레지스트리 등록: {prov}/{ans}")
+    return ans
+
+
 def cmd_models(args) -> None:
-    REGISTRY.parent.mkdir(exist_ok=True)
-    reg = load_yamlish(REGISTRY) or {k: list(v) for k, v in DEFAULT_MODELS.items()}
-    if args.action == "list" or not args.action:
-        for prov, models in reg.items():
+    from . import backends
+    from .core import update_yamlish
+    action = args.action or "list"
+    reg = backends.registry()
+
+    if action == "list":
+        for prov in backends.PROVIDERS:
+            models = reg.get(prov, [])
             print(f"{prov}: {', '.join(models) if models else '(없음)'}")
-    elif args.action == "add":
+        for prov, models in reg.items():   # 표준 4종 밖에 사용자가 넣은 것도 보여준다
+            if prov not in backends.PROVIDERS:
+                print(f"{prov}: {', '.join(models) if models else '(없음)'}")
+        return
+
+    if action == "show":
+        cfg, where = _effective_cfg()
+        _print_status(cfg, where)
+        return
+
+    if action in ("add", "remove"):
         if not (args.provider and args.model_id):
-            raise SystemExit("사용법: llm-wiki models add <provider> <model-id>")
-        reg.setdefault(args.provider, [])
-        if args.model_id not in reg[args.provider]:
-            reg[args.provider].append(args.model_id)
-        print(f"✓ 등록: {args.provider}/{args.model_id}")
-    elif args.action == "remove":
-        if args.provider in reg and args.model_id in reg.get(args.provider, []):
-            reg[args.provider].remove(args.model_id)
-            print(f"✓ 제거: {args.provider}/{args.model_id}")
-    REGISTRY.write_text(dump_yamlish(reg), encoding="utf-8")
+            raise SystemExit(f"사용법: llm-wiki models {action} <provider> <model-id>")
+        prov = backends.canon_provider(args.provider)
+        if action == "add":
+            reg.setdefault(prov, [])
+            if args.model_id not in reg[prov]:
+                reg[prov].append(args.model_id)
+            print(f"✓ 등록: {prov}/{args.model_id}")
+        else:
+            if args.model_id in reg.get(prov, []):
+                reg[prov].remove(args.model_id)
+                print(f"✓ 제거: {prov}/{args.model_id}")
+            else:
+                print(f"레지스트리에 없습니다: {prov}/{args.model_id}")
+        _save_registry(reg)
+        return
+
+    if action == "use":
+        # `models use <model>` 또는 인자 없이 대화형. provider 자리에 모델명을 써도 받아준다.
+        model = args.model_id or args.provider
+        interactive = not model
+        if interactive:
+            cfg, where = _effective_cfg()
+            _print_status(cfg, where)
+            model = _pick_model(reg)
+            if not model:
+                print("변경하지 않았습니다.")
+                return
+        roles = ([args.role] if args.role and args.role != "all"
+                 else list(backends.ROLES))
+        prov = backends.provider_of(model, reg)   # 알 수 없는 모델이면 여기서 안내하며 중단
+        if prov not in reg or model not in reg.get(prov, []):
+            reg.setdefault(prov, [])
+            reg[prov].append(model)
+            _save_registry(reg)
+
+        use_global = args.glob
+        if interactive and not use_global:
+            ans = input("\n저장 위치 — 1) 이 프로젝트  2) 전역 기본값 [1]: ").strip()
+            use_global = ans == "2"
+        path, where = _scope_path(use_global)
+        update_yamlish(path, {"model": {r: model for r in roles}})
+        print(f"\n✓ {where} 설정: {', '.join(roles)} → {model} "
+              f"[{backends.PROVIDER_LABEL.get(prov, prov)}]")
+        print(f"  {path}")
+        cfg, where2 = _effective_cfg()
+        cands, blocked = backends.plan(cfg, roles[0])
+        if cands:
+            print(f"  호출 경로: {' → '.join(c.name for c in cands)}"
+                  + (f"  (막힘: {', '.join(blocked)})" if blocked else ""))
+        else:
+            print(f"  ! 아직 쓸 수 있는 인증 경로가 없습니다 — {', '.join(blocked) or '확인 필요'}")
+        return
+
+    if action == "auth":
+        if not args.provider:
+            raise SystemExit("사용법: llm-wiki models auth <oauth,api_key,ollama> [--global]")
+        order = [o.strip() for o in args.provider.replace(",", " ").split() if o.strip()]
+        bad = [o for o in order if o not in ("oauth", "api_key", "ollama")]
+        if bad:
+            raise SystemExit(f"알 수 없는 인증 방식: {', '.join(bad)} "
+                             "(사용 가능: oauth, api_key, ollama)")
+        path, where = _scope_path(args.glob)
+        update_yamlish(path, {"llm": {"auth_order": order}})
+        print(f"✓ {where} 인증 순서: {', '.join(order)}\n  {path}")
 
 

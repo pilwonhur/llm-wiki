@@ -138,7 +138,9 @@ $ llm-wiki audit                   # ⑥ 품질 감사 (링크·페이지·statu
 | `search <질의> [--no-draft]` / `reindex` | 전문 검색 (approved>reviewed>draft 우선) |
 | `status` | 현황 요약 |
 | `diff [ID]` / `rollback [ID]` | 백업 대비 변경 확인 / 복원 |
-| `models [add\|list\|remove]` | 모델 레지스트리 (`~/.llm-wiki/models.yaml`) |
+| `models use [모델] [--role R] [--global]` | 사용할 LLM 선택 (인자 없으면 대화형) |
+| `models show` / `models auth <순서>` | 현재 모델·인증 경로 확인 / 인증 우선순위 변경 |
+| `models [list\|add\|remove]` | 모델 레지스트리 (`~/.llm-wiki/models.yaml`) |
 | `notify [--dry-run]` | 검토 대기 알림 (0건이면 미발송) |
 | `serve-mcp` | MCP stdio 서버 |
 | `setup-agent claude\|codex\|all` | 전역 에이전트 어댑터 설치 (컴퓨터당 1회) |
@@ -232,16 +234,50 @@ args `["serve-mcp", "--project", "<프로젝트 경로>"]`로 등록 — 형식�
 
 ## LLM 백엔드와 모델
 
-`compile`·`review apply`는 아래 순서로 사용 가능한 백엔드를 자동 선택한다
-(config `llm.auth_order`로 변경 가능):
+**모델은 사용자가 정한다.** 공급자(Anthropic·OpenAI·Google Gemini·Ollama)와 인증
+방식(구독 OAuth·API key)을 자유롭게 조합할 수 있고, 한 번 정하면 계속 유지되며
+언제든 바꿀 수 있다.
 
-1. **OAuth** — `claude` CLI 설치·로그인 시 (구독 한도 내, 별도 과금 없음)
-2. **API key** — `ANTHROPIC_API_KEY` + `anthropic` 패키지
-3. **Ollama** — `localhost:11434` 응답 시 (`model.fallback_local`)
+```bash
+$ llm-wiki models use                    # 대화형 — 공급자·모델·저장 위치를 골라서 설정
+$ llm-wiki models use gpt-5.6-sol        # 바로 지정
+$ llm-wiki models use gemini-3.6-flash --global   # 이 컴퓨터의 모든 프로젝트 기본값
+$ llm-wiki models use claude-haiku-4-5 --role audit  # 역할별로 섞기 (비용 절약)
+$ llm-wiki models show                   # 현재 설정 + 지금 쓸 수 있는 인증 경로
+$ llm-wiki models auth "api_key,oauth"   # 인증 우선순위 변경
+```
+
+설정은 두 층이다. 프로젝트 값이 항상 이긴다.
+
+| 위치 | 파일 | 역할 |
+|---|---|---|
+| 전역 | `~/.llm-wiki/config.yaml` | 이 컴퓨터의 기본 모델·인증 순서 (`--global`). `init` 때 기본값으로 제시된다 |
+| 프로젝트 | `.llm-wiki/config.yaml` | 이 프로젝트만의 선택 — 없는 항목은 전역값을 물려받는다 |
+
+**모델명이 공급자를 결정한다.** 레지스트리(`~/.llm-wiki/models.yaml`)를 먼저 찾고,
+없으면 접두사로 추정한다. 판단이 안 되면 `openai/내-파인튜닝-모델`처럼 앞에 붙이거나
+`llm-wiki models add openai <모델명>`으로 등록하면 된다 — 새 모델이 나와도 코드 수정은 필요 없다.
+
+공급자별 호출 경로:
+
+| 공급자 | OAuth (구독) | API key |
+|---|---|---|
+| Anthropic | `claude` CLI (Claude Code 헤드리스) | `ANTHROPIC_API_KEY` + `anthropic` |
+| OpenAI | `codex` CLI (`codex exec`) | `OPENAI_API_KEY` + `openai` |
+| Google Gemini | `gemini` CLI (`gemini -p`) | `GEMINI_API_KEY`(또는 `GOOGLE_API_KEY`) + `google-genai` |
+| Ollama | — | 로컬 `localhost:11434` |
+
+`llm.auth_order`(기본 `[oauth, api_key, ollama]`) 순서로 **쓸 수 있는 경로를 모두 묶어 두고**,
+실행 중 앞의 경로가 실패하면(로그인 만료·구독 등급 문제 등) 다음 경로로 자동 전환한다.
+OAuth 경로만 쓸 거라면 Python 패키지는 하나도 설치할 필요가 없다. API key 경로는 필요한 것만:
+
+```bash
+$ pipx inject llm-wiki openai        # 또는 anthropic / google-genai
+$ pipx install "llm-wiki[all]"       # 전부
+```
 
 민감 프로젝트는 `.llm-wiki/config.yaml`에서 `external_llm_allowed: false`로 잠그면
-**코드 수준에서 Ollama만 허용**된다. 모델명은 하드코딩되지 않는다 —
-`llm-wiki models add claude claude-fable-5.1`처럼 등록하면 전 프로젝트에서 선택 가능.
+설정된 모델과 **무관하게 코드 수준에서 Ollama만 허용**된다 (`model.fallback_local`).
 
 ## 안전장치 (전부 코드 수준 강제, 적대 테스트 통과)
 
