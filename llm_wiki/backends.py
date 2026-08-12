@@ -25,23 +25,30 @@ DEFAULT_MODEL = "claude-fable-5"
 DEFAULT_LOCAL = "qwen3:32b"
 ROLES = ("compile", "audit", "metadata")
 
-PROVIDERS = ("anthropic", "openai", "gemini", "ollama")
+PROVIDERS = ("anthropic", "openai", "gemini", "antigravity", "ollama")
 # 사용자가 어떻게 쓰든 하나로 모은다 (레지스트리의 기존 `claude:` 키도 그대로 인식).
 PROVIDER_ALIASES = {
     "anthropic": "anthropic", "claude": "anthropic",
     "openai": "openai", "gpt": "openai", "chatgpt": "openai", "codex": "openai",
     "gemini": "gemini", "google": "gemini",
+    "antigravity": "antigravity", "agy": "antigravity",
     "ollama": "ollama", "local": "ollama",
 }
 PROVIDER_LABEL = {"anthropic": "Anthropic", "openai": "OpenAI",
-                  "gemini": "Google Gemini", "ollama": "Ollama (로컬)"}
+                  "gemini": "Google Gemini", "antigravity": "Antigravity (agy)",
+                  "ollama": "Ollama (로컬)"}
 # 새 모델이 출시돼도 코드 수정이 필요 없도록 — 레지스트리에 등록하면 즉시 쓸 수 있다.
+# antigravity는 모델 ID가 자체 체계(-high/-low 접미사)라 공급자 판별이 레지스트리에 의존한다.
 DEFAULT_MODELS = {
     "anthropic": ["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"],
     "openai": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
     "gemini": ["gemini-3.6-flash", "gemini-3.1-pro-preview"],
+    "antigravity": ["gemini-3.6-flash-high", "gemini-3.6-flash-medium",
+                    "gemini-3.6-flash-low", "gemini-3.1-pro-high", "gemini-3.1-pro-low",
+                    "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium"],
     "ollama": [],
 }
+# antigravity는 구독 CLI 전용 — API key 경로가 없다.
 API_ENV = {"anthropic": ("ANTHROPIC_API_KEY",), "openai": ("OPENAI_API_KEY",),
            "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY")}
 API_PACKAGE = {"anthropic": ("anthropic", "anthropic"), "openai": ("openai", "openai"),
@@ -54,15 +61,19 @@ class BackendError(RuntimeError):
 
 # ---------------------------------------------------------------- 레지스트리·공급자
 def registry() -> dict:
-    """모델 레지스트리 — 공급자별 등록 모델. 없으면 기본 목록."""
-    reg = load_yamlish(GLOBAL_REGISTRY)
-    if not reg:
-        return {k: list(v) for k, v in DEFAULT_MODELS.items()}
+    """모델 레지스트리 — 공급자별 등록 모델. 파일이 없으면 기본 목록.
+
+    파일에 **없는 공급자**만 기본값으로 채운다 — 업그레이드로 새 공급자가 추가돼도
+    기존 사용자가 다시 등록할 필요가 없고, 사용자가 직접 손댄 공급자 목록은 건드리지 않는다.
+    """
     out: dict[str, list] = {}
-    for prov, models in reg.items():
+    for prov, models in (load_yamlish(GLOBAL_REGISTRY) or {}).items():
         canon = canon_provider(prov)
         out.setdefault(canon, [])
         out[canon] += [m for m in (models if isinstance(models, list) else [models]) if m]
+    for prov, models in DEFAULT_MODELS.items():
+        if prov not in out:
+            out[prov] = list(models)
     return out
 
 
@@ -180,10 +191,22 @@ class FallbackBackend(Backend):
 
 # ---- OAuth (구독형 CLI) ------------------------------------------------------
 class CLIBackend(Backend):
-    """구독 로그인 상태의 공급자 CLI를 헤드리스로 호출. 에이전트형이라 파일을 직접 읽는다."""
+    """구독 로그인 상태의 공급자 CLI를 헤드리스로 호출."""
     cli = ""
     agentic = True
     timeout = 1800
+
+    @classmethod
+    def locate(cls, cfg: dict | None = None) -> str | None:
+        """실행 파일 경로. config `llm.cli_path_<provider>` 로 강제 지정할 수 있다."""
+        override = ((cfg or {}).get("llm") or {}).get(f"cli_path_{cls.provider}")
+        if override:
+            p = os.path.expanduser(str(override))
+            return p if os.access(p, os.X_OK) else None
+        return shutil.which(cls.cli)
+
+    def _bin(self) -> str:
+        return type(self).locate(self.cfg) or self.cli
 
     def _run(self, cmd: list[str], cwd: Path | None):
         r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd,
@@ -201,7 +224,7 @@ class ClaudeCLIBackend(CLIBackend):
     cli = "claude"
 
     def complete(self, prompt, cwd=None):
-        cmd = ["claude", "-p", prompt, "--output-format", "json"]
+        cmd = [self._bin(), "-p", prompt, "--output-format", "json"]
         if self.model:
             cmd += ["--model", self.model]
         r = self._run(cmd + self._extra_args(), cwd)
@@ -228,7 +251,7 @@ class CodexCLIBackend(CLIBackend):
         fd, out_path = tempfile.mkstemp(prefix="llm-wiki-codex-", suffix=".txt")
         os.close(fd)
         try:
-            cmd = ["codex", "exec", "--json", "--skip-git-repo-check",
+            cmd = [self._bin(), "exec", "--json", "--skip-git-repo-check",
                    "-s", "read-only", "-o", out_path]
             if self.model:
                 cmd += ["-m", self.model]
@@ -260,7 +283,7 @@ class GeminiCLIBackend(CLIBackend):
     cli = "gemini"
 
     def complete(self, prompt, cwd=None):
-        cmd = ["gemini", "-p", prompt, "-o", "json"]
+        cmd = [self._bin(), "-p", prompt, "-o", "json"]
         if self.model:
             cmd += ["-m", self.model]
         r = self._run(cmd + self._extra_args(), cwd)
@@ -274,6 +297,68 @@ class GeminiCLIBackend(CLIBackend):
                or (data.get("usage") or {}) or {})
         return text, {"input": tok.get("prompt") or tok.get("input"),
                       "output": tok.get("candidates") or tok.get("output")}
+
+
+class AntigravityCLIBackend(CLIBackend):
+    """Antigravity OAuth 경로 — Antigravity CLI 헤드리스 (`agy -p`).
+
+    다른 CLI와 달리 **에이전트형이 아니다** (agentic=False): 헤드리스에서는 파일 읽기 같은
+    도구 권한을 물어볼 수 없어 자동 거부되고, 그때 status는 SUCCESS인데 response만 비어
+    돌아온다. 그래서 원자료 본문을 프롬프트에 넣어 도구 없이 답하게 하고,
+    빈 응답은 오류로 올려 다음 백엔드로 넘긴다.
+    파일을 직접 읽게 하려면 Antigravity settings.json의 permissions.allow에 규칙을 넣고
+    config `llm.cli_args_antigravity` 로 필요한 인자를 덧붙인다.
+    """
+    name = "oauth-antigravity"
+    provider = "antigravity"
+    cli = "agy"
+    agentic = False
+
+    @classmethod
+    def locate(cls, cfg=None):
+        """PATH의 `agy`는 IDE 런처(Electron)일 수 있다 — 그건 -p를 무시하고 창을 띄운다.
+
+        설치 관리자가 놓는 실제 CLI(~/.local/bin/agy)를 우선하고, .app 번들 안으로
+        연결되는 경로는 걸러낸다.
+        """
+        override = ((cfg or {}).get("llm") or {}).get("cli_path_antigravity")
+        if override:
+            p = os.path.expanduser(str(override))
+            return p if os.access(p, os.X_OK) else None
+        candidates = [str(Path.home() / ".local" / "bin" / "agy")]
+        found = shutil.which("agy")
+        if found:
+            candidates.append(found)
+        for c in candidates:
+            if not os.access(c, os.X_OK):
+                continue
+            if ".app/" in str(Path(c).resolve()):   # IDE 런처
+                continue
+            return c
+        return None
+
+    def complete(self, prompt, cwd=None):
+        cmd = [self._bin(), "-p", prompt, "--output-format", "json",
+               "--print-timeout", "30m"]
+        if self.model:
+            cmd += ["--model", self.model]
+        r = self._run(cmd + self._extra_args(), cwd)
+        raw = r.stdout.strip()
+        try:
+            data = json.loads(raw[raw.index("{"):raw.rindex("}") + 1])
+        except (ValueError, json.JSONDecodeError):
+            if not raw:
+                raise BackendError("agy CLI 가 빈 응답을 반환했습니다.")
+            return raw, {}
+        text = (data.get("response") or "").strip()
+        if not text:
+            # status=SUCCESS 인데 응답이 비는 대표 원인: 도구 권한 자동 거부
+            hint = (r.stderr or "").strip()[:200]
+            raise BackendError(
+                "agy CLI 가 빈 응답을 반환했습니다 (status="
+                f"{data.get('status')}). {hint or '헤드리스에서 도구 권한이 자동 거부됐을 수 있습니다.'}")
+        u = data.get("usage") or {}
+        return text, {"input": u.get("input_tokens"), "output": u.get("output_tokens")}
 
 
 # ---- API key (공식 SDK) ------------------------------------------------------
@@ -349,7 +434,7 @@ class OllamaBackend(Backend):
 
 
 OAUTH_BACKENDS = {"anthropic": ClaudeCLIBackend, "openai": CodexCLIBackend,
-                  "gemini": GeminiCLIBackend}
+                  "gemini": GeminiCLIBackend, "antigravity": AntigravityCLIBackend}
 API_BACKENDS = {"anthropic": AnthropicAPIBackend, "openai": OpenAIAPIBackend,
                 "gemini": GeminiAPIBackend}
 
@@ -375,12 +460,15 @@ def auth_status(provider: str) -> dict:
     provider = canon_provider(provider)
     if provider == "ollama":
         return {"ollama": _ollama_alive()}
-    cli = OAUTH_BACKENDS[provider].cli
+    cls = OAUTH_BACKENDS[provider]
+    if provider not in API_ENV:      # 구독 CLI 전용 공급자 (antigravity)
+        return {"oauth": bool(cls.locate()), "oauth_hint": f"{cls.cli} CLI",
+                "api_key": False, "api_key_hint": "지원 안 함 (구독 CLI 전용)"}
     env_ok = any(os.environ.get(e) for e in API_ENV[provider])
     mod, pkg = API_PACKAGE[provider]
     return {
-        "oauth": bool(shutil.which(cli)),
-        "oauth_hint": f"{cli} CLI",
+        "oauth": bool(cls.locate()),
+        "oauth_hint": f"{cls.cli} CLI",
         "api_key": bool(env_ok and _have_package(mod)),
         "api_key_hint": ("/".join(API_ENV[provider])
                          + ("" if env_ok else " 미설정")
@@ -413,10 +501,12 @@ def plan(cfg: dict, role: str = "compile") -> tuple[list[Backend], list[str]]:
     for auth in order:
         if auth == "oauth" and provider in OAUTH_BACKENDS:
             cls = OAUTH_BACKENDS[provider]
-            if shutil.which(cls.cli):
+            if cls.locate(cfg):
                 candidates.append(cls(model, cfg))
             else:
                 blocked.append(f"oauth({cls.cli} CLI 미설치)")
+        elif auth == "api_key" and provider not in API_BACKENDS:
+            blocked.append(f"api_key({PROVIDER_LABEL.get(provider, provider)}는 구독 CLI 전용)")
         elif auth == "api_key" and provider in API_BACKENDS:
             mod, pkg = API_PACKAGE[provider]
             env_ok = any(os.environ.get(e) for e in API_ENV[provider])
@@ -449,9 +539,10 @@ def resolve(cfg: dict, role: str = "compile") -> Backend:
     else:
         prov = provider_of(model)
         cli = OAUTH_BACKENDS[prov].cli if prov in OAUTH_BACKENDS else "ollama"
-        env = "/".join(API_ENV.get(prov, ("",)))
-        hint = (f"{PROVIDER_LABEL.get(prov, prov)} 를 쓰려면 {cli} CLI 로그인(OAuth) 또는 "
-                f"{env} 설정 중 하나가 필요합니다. `llm-wiki models show` 로 현황을 보고, "
+        env = "/".join(API_ENV.get(prov, ()))
+        need = f"{cli} CLI 로그인(OAuth)" + (f" 또는 {env} 설정" if env else " (API key 경로 없음)")
+        hint = (f"{PROVIDER_LABEL.get(prov, prov)} 를 쓰려면 {need}이 필요합니다. "
+                "`llm-wiki models show` 로 현황을 보고, "
                 "`llm-wiki models use` 로 다른 모델을 고를 수 있습니다.")
     raise BackendError(
         f"'{model}' 을(를) 쓸 수 있는 백엔드가 없습니다 (막힌 경로: {', '.join(blocked) or '없음'}). {hint}")

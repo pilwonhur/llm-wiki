@@ -9,6 +9,63 @@ GIST HUR Group LLM-Wiki의 버전별 변경 이력. 형식은 [Keep a Changelog]
 
 업데이트: `pipx reinstall llm-wiki` / 버전 확인: `llm-wiki --version`
 
+## [0.5.0] — 2026-08-12
+
+Antigravity CLI(`agy`) 지원 — 네 번째 공급자이자 네 번째 에이전트 입구.
+
+### Added
+- **`antigravity` 공급자** — `agy -p --output-format json` 헤드리스 편찬 백엔드.
+  구독 OAuth 전용(API key 경로 없음)이며 토큰 사용량을 기록한다. 모델 ID가 자체
+  체계(`gemini-3.6-flash-high`·`claude-sonnet-4-6`·`gpt-oss-120b-medium` …)라
+  레지스트리에 `antigravity:` 로 기본 등록했고, `agy/<모델>` 로 강제 지정도 가능
+- **`setup-agent agy`** — `/wiki-init`·`/wiki-ingest`·`/wiki-compile`·`/wiki-audit`·
+  `/wiki-ask` 스킬을 `~/.gemini/antigravity-cli/skills/` 에 설치 (컴퓨터당 1회)
+- `init`이 프로젝트 스킬을 `.agents/skills/` 에도 설치 — agy가 프로젝트 스킬을 읽는 경로
+- `llm.cli_path_<provider>` — CLI 실행 파일 경로를 직접 지정 (자동 탐색 실패 시)
+- README: agy용 MCP 등록법 (`.agents/mcp_config.json` 프로젝트 스코프 /
+  `~/.gemini/config/mcp_config.json` 전역)과 다중 프로젝트 시 도구 누적 주의
+
+### Fixed
+- 레지스트리가 파일에 없는 **신규 공급자만** 기본값으로 채우도록 변경 — 기존
+  `models.yaml`을 가진 사용자가 업그레이드해도 새 공급자를 다시 등록할 필요가 없다
+  (이게 없으면 `gemini-3.6-flash-high` 가 접두사 추정으로 gemini 직접 호출로 잘못 라우팅됐다)
+
+### Notes
+- **agy 백엔드는 에이전트형이 아니다** (`agentic=False`). 헤드리스에서는 도구 권한을
+  물어볼 수 없어 파일 읽기가 자동 거부되고, 그때 `status: SUCCESS` 인데 응답만 비어
+  돌아온다. 그래서 원자료 본문을 프롬프트에 넣어 도구 없이 답하게 하고, 빈 응답은
+  오류로 올려 다음 백엔드로 넘긴다. PDF 원자료를 쓰면 `pypdf` 가 필요하다
+- PATH의 `agy` 는 Antigravity **IDE 런처**(Electron)일 수 있다 — `-p` 를 무시하고 창을
+  띄운다. 실제 CLI(`~/.local/bin/agy`)를 우선하고 `.app` 번들 경로는 걸러낸다
+
+## [0.4.0] — 2026-08-12
+
+질문하기 — Wiki에 근거해 답하고, 답변 중 배경지식만 동의를 거쳐 원자료로 되돌린다.
+
+### Added
+- **`llm-wiki ask <질문>`** — 편찬된 Wiki를 근거로 답하는 질의응답. MCP 클라이언트 없이
+  터미널에서 바로 쓴다. 문장마다 `[번호]` 인용을 붙이고, 근거 목록과 draft 여부를 함께 출력
+  - `--asker`(또는 `$LLM_WIKI_ASKER`)로 질의를 실명 귀속해 `queries.jsonl`에 기록 (F11.1)
+  - `--top N` 근거 문서 수, `--no-draft` approved/reviewed만 근거로
+  - 근거를 못 찾으면 그 사실을 먼저 말하고 배경지식만으로 답한다 (프로젝트 고유 사실은
+    모른다고 답하도록 프롬프트에서 강제)
+  - 답변의 '모델 배경지식' 항목만 **항목별 동의** 후 `10_Inbox/_qa/`에 저장 (`--save-qa`로
+    일괄, `--no-save-qa`로 생략). Wiki 근거로 답한 본문은 저장 후보에 오르지 않는다 —
+    Wiki 요약의 원자료 재유입(AI 자기 참조 순환)을 코드에서 차단
+- 검색의 한국어 처리 — 조사·용언 어미를 떼고 접두 검색으로 넘긴다. 문장형 질문이
+  거의 0건이던 문제 해소 ("제어기 A안을 채택한 근거가 뭐야?" → `제어기* AND A안* AND
+  채택* AND 근거*`). 형태소 분석기 없이 접미사 사전으로 근사 — 의존성 0 유지
+
+### Fixed
+- **Q&A 환류가 끊겨 있던 문제** — `ingest`가 `10_Inbox/_qa/`를 건너뛰어, MCP
+  `wiki_save_qa`가 저장한 Q&A가 아무도 읽지 않는 곳에 쌓이기만 했다 ("ingest 후 편찬 시
+  반영됩니다"라는 안내가 사실이 아니었음). 이제 `type: qa`로 등록해
+  `20_Sources/QA-Sessions/`로 옮기고 다음 compile이 편찬한다. 귀속은 폴더명이 아니라
+  파일에 적힌 질문자를 따른다. `_requests/`는 원자료가 아니므로 계속 제외
+- README가 소개하던 미구현 명령 정리 — `llm-wiki ask`는 이번에 구현했고,
+  `llm-wiki activity`(MCP `wiki_activity`로만 존재)와 질의 패턴 기반 지식 공백 자동
+  탐지는 백로그로 명시
+
 ## [0.3.1] — 2026-08-12
 
 ### Fixed

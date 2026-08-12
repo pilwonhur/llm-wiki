@@ -254,6 +254,16 @@ class Project:
             json.dumps(m, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     # -- 처리 로그 (사람이 읽는 이력)
+    def log_query(self, q: str, asker: str, hits: int, **extra) -> None:
+        """질의를 관심도 로그에 실명과 함께 기록 (F11.1). ask와 MCP가 공유한다."""
+        d = self.meta / "metrics"
+        d.mkdir(parents=True, exist_ok=True)
+        rec = {"at": datetime.now().isoformat(timespec="seconds"),
+               "asker": asker or "unknown", "query": q[:200], "hits": hits}
+        rec.update({k: v for k, v in extra.items() if v is not None})
+        with open(d / "queries.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
     def log(self, title: str, lines: list[str]) -> None:
         p = self.meta / "processing-log.md"
         entry = [f"\n## {today()} — {title}"] + [f"- {ln}" for ln in lines]

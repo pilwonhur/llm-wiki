@@ -29,6 +29,14 @@ def _guess_type(name: str) -> str:
     return "paper"
 
 
+def _qa_asker(path: Path) -> str:
+    """Q&A 제출물의 귀속은 폴더가 아니라 파일에 적힌 질문자다 (F10.x 실명 귀속)."""
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines()[:10]:
+        if line.startswith("- 질문자:"):
+            return nfc(line.split(":", 1)[1].strip()) or "unknown"
+    return "unknown"
+
+
 def _members(proj: Project) -> set[str]:
     p = proj.root / "00_Project" / "members.md"
     names = set()
@@ -60,7 +68,7 @@ def _ingest(proj: Project, assume_yes: bool) -> None:
     files = [p for p in sorted(inbox.rglob("*"))
              if p.is_file() and p.name not in SKIP_NAMES
              and not p.name.startswith(".") and not p.name.endswith("-회의록초안.md")
-             and "_qa" not in p.parts and "_requests" not in p.parts]
+             and "_requests" not in p.parts]   # _requests는 편찬 요청이라 원자료가 아니다
     if not files:
         print("10_Inbox 에 처리할 자료가 없습니다.")
         return
@@ -68,18 +76,23 @@ def _ingest(proj: Project, assume_yes: bool) -> None:
     done, dups, held, log = [], [], [], []
     for f in files:
         rel = f.relative_to(inbox)
-        # 업로더 귀속 (F13.1): 첫 단계 하위폴더명
-        uploader = nfc(rel.parts[0]) if len(rel.parts) > 1 else "unknown"
+        # Q&A 제출물(ask·MCP wiki_save_qa)은 분류가 정해져 있고 귀속은 질문자다
+        is_qa = "_qa" in rel.parts
+        if is_qa:
+            uploader = _qa_asker(f)
+        else:
+            # 업로더 귀속 (F13.1): 첫 단계 하위폴더명
+            uploader = nfc(rel.parts[0]) if len(rel.parts) > 1 else "unknown"
         if uploader != "unknown" and members and uploader not in members and uploader != cfg_reviewer:
-            log.append(f"미등록 업로더 폴더 '{uploader}' — members.md 확인 요망 (등록은 진행)")
+            log.append(f"미등록 업로더 '{uploader}' — members.md 확인 요망 (등록은 진행)")
 
         digest = sha256_file(f)
         if digest in known_hashes:
             dups.append(f"{rel} (기존: {known_hashes[digest]})")
             continue
 
-        guess = _guess_type(f.name)
-        if assume_yes:
+        guess = "qa" if is_qa else _guess_type(f.name)
+        if assume_yes or is_qa:
             typ = guess
         else:
             keys = "/".join(SOURCE_TYPES)

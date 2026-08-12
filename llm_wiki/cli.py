@@ -63,12 +63,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("query", nargs="+")
     sp.add_argument("--no-draft", action="store_true", help="approved/reviewed만")
 
+    sp = sub.add_parser("ask", help="Wiki에 근거해 질문에 답변 (출처 표시)")
+    sp.add_argument("question", nargs="+", help="질문 (따옴표로 묶어도 됨)")
+    sp.add_argument("--asker", help="질문자 실명 (기본: $LLM_WIKI_ASKER 또는 로그인 계정)")
+    sp.add_argument("--top", type=int, default=5, help="근거로 쓸 문서 수 (기본 5)")
+    sp.add_argument("--no-draft", action="store_true", help="approved/reviewed만 근거로")
+    sp.add_argument("--save-qa", action="store_true",
+                    help="답변의 배경지식 항목을 질문 없이 10_Inbox/_qa/ 에 저장")
+    sp.add_argument("--no-save-qa", action="store_true", help="저장 여부를 묻지 않음")
+
     sub.add_parser("reindex", help="검색 인덱스 재구축")
     sp = sub.add_parser("serve-mcp", help="MCP stdio 서버 (외부 AI 비서 연동)")
     sp.add_argument("--project", help="프로젝트 폴더 경로 (전역 등록 클라이언트용 — 미지정 시 현재 위치에서 탐색)")
 
     sp = sub.add_parser("setup-agent", help="전역 에이전트 어댑터 설치 (/wiki-init 등)")
-    sp.add_argument("tool", choices=["claude", "codex", "all"], help="대상 도구")
+    sp.add_argument("tool", choices=["claude", "codex", "agy", "all"],
+                    help="대상 도구 (agy = Antigravity CLI)")
 
     sp = sub.add_parser("notify", help="검토 대기 알림 발송 (0건이면 미발송)")
     sp.add_argument("--dry-run", action="store_true", help="콘솔 출력만")
@@ -81,8 +91,8 @@ def main(argv: list[str] | None = None) -> None:
     if not args.cmd:
         build_parser().print_help()
         return
-    from . import (audit_cmd, compile_cmd, ingest_cmd, init_cmd, mcp_cmd,
-                   misc_cmd, notify_cmd, search_cmd)
+    from . import (ask_cmd, audit_cmd, compile_cmd, ingest_cmd, init_cmd,
+                   mcp_cmd, misc_cmd, notify_cmd, search_cmd)
     dispatch = {
         "init": init_cmd.cmd_init,
         "ingest": ingest_cmd.cmd_ingest,
@@ -94,6 +104,7 @@ def main(argv: list[str] | None = None) -> None:
         "diff": misc_cmd.cmd_diff,
         "models": misc_cmd.cmd_models,
         "search": search_cmd.cmd_search,
+        "ask": ask_cmd.cmd_ask,
         "reindex": search_cmd.cmd_reindex,
         "serve-mcp": mcp_cmd.cmd_serve_mcp,
         "notify": notify_cmd.cmd_notify,

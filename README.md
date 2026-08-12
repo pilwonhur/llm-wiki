@@ -38,16 +38,16 @@ $ pipx install -e .
 
 | 선택 설치 | 언제 |
 |---|---|
-| Claude Code (`claude`) | **편찬(compile) 백엔드** — OAuth 구독 (권장 기본) + 에이전트 입구·MCP 클라이언트 |
-| Codex CLI (`codex`) | **에이전트 입구·MCP 클라이언트로 사용** (스킬 어댑터 동봉). 편찬 백엔드로는 아직 미지원 — 아래 참고 |
-| `pipx inject llm-wiki anthropic` + `ANTHROPIC_API_KEY` | API key 편찬 백엔드 (Claude Code 없이) |
+| Claude Code (`claude`) | Anthropic **OAuth 구독** 편찬 백엔드 + 에이전트 입구·MCP 클라이언트 |
+| Codex CLI (`codex`) | OpenAI **OAuth 구독** 편찬 백엔드 + 에이전트 입구·MCP 클라이언트 |
+| Gemini CLI (`gemini`) | Gemini **OAuth 구독** 편찬 백엔드 + MCP 클라이언트 |
+| Antigravity CLI (`agy`) | Antigravity **OAuth 구독** 편찬 백엔드 + 에이전트 입구·MCP 클라이언트 |
+| `pipx inject llm-wiki anthropic\|openai\|google-genai` + 각 API key | API key 편찬 백엔드 (CLI 없이) |
 | Ollama | 로컬 LLM 편찬 백엔드 — 민감 프로젝트·오프라인 |
-| `pipx inject llm-wiki pypdf` | API/Ollama 백엔드로 PDF를 처리할 때 (OAuth는 불필요) |
+| `pipx inject llm-wiki pypdf` | API/Ollama 백엔드로 PDF를 처리할 때 (OAuth CLI는 불필요) |
 
-> Codex 참고: Codex로 대화하며 `/wiki-compile`을 실행하면 편찬 자체는 CLI가 설정된
-> 백엔드(Claude OAuth/API key/Ollama)로 수행한다. OpenAI 구독(OAuth)을 편찬 백엔드로
-> 쓰는 것은 백로그다 — 타사 구독 OAuth는 헤드리스 래핑의 안정성 검증 후 추가한다는
-> 설계 방침(PRD §3.3)에 따른 것.
+**셋 중 아무거나 하나만 있으면 편찬이 된다.** 어느 공급자·인증을 쓸지는
+`llm-wiki models use`로 정하고 `llm-wiki models show`로 확인한다 (아래 「LLM 백엔드와 모델」).
 
 ### Windows / Linux에서 사용
 
@@ -136,6 +136,7 @@ $ llm-wiki audit                   # ⑥ 품질 감사 (링크·페이지·statu
 | `review apply <이름>` / `apply --all` / `reject <이름> --reason` | 제안 승인·거부 |
 | `audit` | 품질 감사 리포트 (`.llm-wiki/audit/`) |
 | `search <질의> [--no-draft]` / `reindex` | 전문 검색 (approved>reviewed>draft 우선) |
+| `ask <질문> [--asker 이름] [--top N] [--no-draft]` | Wiki 근거 질의응답 — 출처 인용, 배경지식은 동의 후 Q&A 승격 |
 | `status` | 현황 요약 |
 | `diff [ID]` / `rollback [ID]` | 백업 대비 변경 확인 / 복원 |
 | `models use [모델] [--role R] [--global]` | 사용할 LLM 선택 (인자 없으면 대화형) |
@@ -143,7 +144,7 @@ $ llm-wiki audit                   # ⑥ 품질 감사 (링크·페이지·statu
 | `models [list\|add\|remove]` | 모델 레지스트리 (`~/.llm-wiki/models.yaml`) |
 | `notify [--dry-run]` | 검토 대기 알림 (0건이면 미발송) |
 | `serve-mcp` | MCP stdio 서버 |
-| `setup-agent claude\|codex\|all` | 전역 에이전트 어댑터 설치 (컴퓨터당 1회) |
+| `setup-agent claude\|codex\|agy\|all` | 전역 에이전트 어댑터 설치 (컴퓨터당 1회) |
 
 야간 배치 (cron 예):
 
@@ -212,9 +213,24 @@ args = ["serve-mcp", "--project", "/절대/경로/Project-X"]
   "args": ["serve-mcp", "--project", "/절대/경로/Project-X"]}}}
 ```
 
-**Antigravity / OpenClaw 등**: 각 도구의 MCP 설정 화면에서 command `llm-wiki`,
+**Antigravity CLI (`agy`)** — 프로젝트별 설정을 지원하므로 서버가 전역에 쌓이지 않는다.
+프로젝트 루트에 `.agents/mcp_config.json` 을 만들면 그 프로젝트에서만 보인다
+(서버가 프로젝트 폴더에서 실행되므로 `--project` 도 불필요):
+
+```json
+{"mcpServers": {"llm-wiki": {"command": "llm-wiki", "args": ["serve-mcp"]}}}
+```
+
+전역으로 등록하려면 `~/.gemini/config/mcp_config.json` 에 같은 형식으로 넣되
+`args`에 `"--project", "<절대경로>"` 를 덧붙인다.
+
+**OpenClaw 등**: 각 도구의 MCP 설정 화면에서 command `llm-wiki`,
 args `["serve-mcp", "--project", "<프로젝트 경로>"]`로 등록 — 형식은 위와 동일하다.
-프로젝트가 여러 개면 프로젝트마다 서버를 하나씩(이름을 다르게) 등록한다.
+
+> 프로젝트가 여러 개일 때: Claude Code(`claude mcp add`는 기본 `local` 스코프)와
+> Antigravity(`.agents/mcp_config.json`)는 **프로젝트별로 격리**되므로 한 세션에 보이는
+> 서버가 하나다. 반면 Codex·Gemini CLI는 전역 설정 파일뿐이라 프로젝트마다 등록하면
+> 도구가 누적된다 (서버당 약 660토큰, 그리고 `wiki_search` 이름이 겹쳐 모델이 헷갈린다).
 
 | MCP 도구 | 기능 | 쓰기 권한 |
 |---|---|---|
@@ -265,7 +281,13 @@ $ llm-wiki models auth "api_key,oauth"   # 인증 우선순위 변경
 | Anthropic | `claude` CLI (Claude Code 헤드리스) | `ANTHROPIC_API_KEY` + `anthropic` |
 | OpenAI | `codex` CLI (`codex exec`) | `OPENAI_API_KEY` + `openai` |
 | Google Gemini | `gemini` CLI (`gemini -p`) | `GEMINI_API_KEY`(또는 `GOOGLE_API_KEY`) + `google-genai` |
+| Antigravity | `agy` CLI (`agy -p`) | — (구독 전용) |
 | Ollama | — | 로컬 `localhost:11434` |
+
+Antigravity 모델 ID는 자체 체계다 (`gemini-3.6-flash-high`, `claude-sonnet-4-6`,
+`gpt-oss-120b-medium` …). 같은 이름의 Gemini 직접 호출과 구분되도록 레지스트리에
+`antigravity:` 로 등록되어 있고, `agy/<모델명>` 으로 강제할 수도 있다.
+현재 목록은 `agy models` 로 확인한다.
 
 `llm.auth_order`(기본 `[oauth, api_key, ollama]`) 순서로 **쓸 수 있는 경로를 모두 묶어 두고**,
 실행 중 앞의 경로가 실패하면(로그인 만료·구독 등급 문제 등) 다음 경로로 자동 전환한다.

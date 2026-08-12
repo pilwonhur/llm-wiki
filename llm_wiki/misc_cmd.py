@@ -250,6 +250,15 @@ def cmd_setup_agent(args) -> None:
             _sh.copy2(f, dst / f.name)
             names.append(f"/{f.stem}")
         done.append(f"Codex: {' '.join(names)} 프롬프트 → {dst}")
+    if tool in ("agy", "all"):
+        # Antigravity CLI 전역 스킬 디렉터리 (프로젝트 스킬은 init이 .agents/skills/ 에 설치)
+        dst = Path.home() / ".gemini" / "antigravity-cli" / "skills"
+        dst.mkdir(parents=True, exist_ok=True)
+        names = []
+        for f in sorted((src / "agy").glob("*.md")):
+            _sh.copy2(f, dst / f.name)
+            names.append(f"/{f.stem}")
+        done.append(f"Antigravity(agy): {' '.join(names)} 스킬 → {dst}")
     for d in done:
         print(f"✓ {d}")
     print("설치는 컴퓨터당 1회면 충분합니다. 업데이트 후에는 다시 실행하면 갱신됩니다.")

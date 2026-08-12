@@ -51,12 +51,7 @@ TOOLS = [
 
 
 def _log_query(proj: Project, q: str, asker: str, hits: int) -> None:
-    d = proj.meta / "metrics"
-    d.mkdir(exist_ok=True)
-    with open(d / "queries.jsonl", "a", encoding="utf-8") as f:
-        f.write(json.dumps({"at": datetime.now().isoformat(timespec="seconds"),
-                            "asker": asker or "unknown", "query": q[:200],
-                            "hits": hits}, ensure_ascii=False) + "\n")
+    proj.log_query(q, asker, hits, via="mcp")
 
 
 def _call(proj: Project, name: str, a: dict) -> str:
