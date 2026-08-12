@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from pathlib import Path
 
 from . import backends
-from .core import Project, frontmatter, nfc, require_project, run_id, today
+from .core import (Project, frontmatter, nfc, require_project, run_id, today,
+                   unique_path)
 
 PROTOCOL = """
 출력은 반드시 아래 JSON 배열 **하나만** 출력하라 (설명·마크다운 펜스 금지):
@@ -153,17 +155,84 @@ def _apply(proj: Project, rid: str, items: list, report: list) -> None:
         report.append(f"{'갱신' if action == 'update' else '생성'}: {target.relative_to(proj.root)}")
 
 
+# ---------------------------------------------------------------- 편찬 요청 (F7.x)
+def pending_requests(proj: Project) -> list[Path]:
+    d = proj.root / "10_Inbox" / "_requests"
+    return sorted(p for p in d.glob("*.md")) if d.exists() else []
+
+
+def _parse_request(text: str) -> dict:
+    """요청 파일 파싱 (MCP wiki_request_edit 형식, 사람이 쓴 변형도 관대하게)."""
+    def field(label):
+        m = re.search(rf"^-\s*{label}\s*:\s*(.+)$", text, re.M)
+        return m.group(1).strip() if m else ""
+
+    def section(head):
+        m = re.search(rf"^##\s*{head}\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+        return m.group(1).strip() if m else ""
+
+    suggestion = section("제안")
+    return {"author": field("요청자") or "unknown",
+            "target": field("대상"),
+            "suggestion": suggestion or text.strip(),
+            "rationale": section("근거")}
+
+
+def _process_requests(proj: Project, rid: str, report: list) -> tuple[int, int]:
+    """`10_Inbox/_requests/` 의 변경 요청을 `_Proposals` 제안으로 변환한다.
+
+    외부 비서는 Wiki를 직접 못 고친다 — 요청은 반드시 사람의 `review apply` 를 거친다.
+    그래서 여기서는 LLM을 부르지 않고 제안서만 결정적으로 만든다 (병합은 review apply의 몫).
+    """
+    reqs = pending_requests(proj)
+    if not reqs:
+        return 0, 0
+    wiki = (proj.root / "30_Wiki").resolve()
+    prop_dir = proj.root / "30_Wiki" / "_Proposals"
+    archive = proj.root / "90_Archive" / "_requests"
+    done = held = 0
+    for f in reqs:
+        r = _parse_request(f.read_text(encoding="utf-8", errors="replace"))
+        rel = nfc(r["target"])
+        target = (proj.root / rel).resolve() if rel else None
+        # N1: 대상은 30_Wiki 안의 기존 문서여야 한다 (요청으로 새 문서를 만들지 않는다)
+        if not rel or not str(target).startswith(str(wiki)) or not target.exists():
+            report.append(f"요청 보류: {f.name} — 대상 문서를 찾지 못함 ({rel or '대상 미기재'})")
+            held += 1
+            continue
+        status = frontmatter(target.read_text(encoding="utf-8")).get("status", "draft")
+        # 같은 문서에 요청이 여러 건이면 제안서도 여러 개여야 한다 (덮어쓰기 금지)
+        out = unique_path(prop_dir, f"{target.stem}-{rid}")
+        out.write_text(
+            f"---\ntarget: {target.relative_to(proj.root)}\n"
+            f"requested_by: {r['author']}\nstatus_at_request: {status}\n"
+            f"created: {today()}\nsource_request: {f.relative_to(proj.root)}\n---\n\n"
+            f"# 변경 제안: [[{target.stem}]]\n\n"
+            f"외부 비서 경유 요청 ({r['author']}) — 사람이 `llm-wiki review apply` 로 승인해야 반영된다.\n\n"
+            f"## 현재 내용\n대상 문서 `{target.relative_to(proj.root)}` (status: {status}) 참조.\n\n"
+            f"## 제안 내용\n{r['suggestion']}\n\n"
+            f"## 근거\n{r['rationale'] or '(요청자가 근거를 적지 않음 — 승인 전 확인 필요)'}\n",
+            encoding="utf-8")
+        archive.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(f), archive / f.name)   # 처리 흔적 보존 (재처리 방지)
+        report.append(f"요청→제안: {f.name} → {out.relative_to(proj.root)} ({r['author']})")
+        done += 1
+    return done, held
+
+
 def cmd_compile(args) -> None:
     proj = require_project()
     cfg = proj.config()
     m = proj.manifest()
     todo = [s for s in m["sources"] if not s.get("processed")]
-    if not todo:
-        print("처리할 자료가 없습니다 (manifest 전부 processed).")
+    reqs = pending_requests(proj)
+    if not todo and not reqs:
+        print("처리할 자료가 없습니다 (manifest 전부 processed, 대기 중인 편찬 요청도 없음).")
         return
 
-    backend = backends.resolve(cfg, "compile")
-    agentic = backend.agentic   # 에이전트형 CLI는 원자료를 스스로 읽는다 (프롬프트에 경로만)
+    # 요청만 있으면 LLM이 필요 없다 — 백엔드 없이도 처리되게 한다
+    backend = backends.resolve(cfg, "compile") if todo else None
+    agentic = backend.agentic if backend else False  # 에이전트형은 원자료를 스스로 읽는다
     keep = int((cfg.get("snapshot") or {}).get("backup_keep", 10) or 10)
     template = (proj.meta / "templates" / "wiki-doc.md").read_text(encoding="utf-8") \
         if (proj.meta / "templates" / "wiki-doc.md").exists() else ""
@@ -172,9 +241,17 @@ def cmd_compile(args) -> None:
     rid = run_id()
     try:
         proj.backup(rid, keep=keep)
-        print(f"✓ 백업 {rid} | 백엔드 {backend.describe()} | 대상 {len(todo)}건")
+        head = f"✓ 백업 {rid}"
+        if todo:
+            head += f" | 백엔드 {backend.describe()} | 대상 {len(todo)}건"
+        if reqs:
+            head += f" | 편찬 요청 {len(reqs)}건"
+        print(head)
         ctx = _read_context(proj)
         report, failures, usage_total = [], [], {"input": 0, "output": 0, "cost_usd": 0.0}
+
+        # 편찬 요청 → 제안 변환 (LLM 불필요, 사람의 review apply 를 거친다)
+        req_done, req_held = _process_requests(proj, rid, report)
         for src in todo:  # 순차 큐 (F2.1) — 실패해도 다음 파일 진행
             name = Path(src["path"]).name
             try:
@@ -200,15 +277,24 @@ def cmd_compile(args) -> None:
         cost_line = (f"토큰 in {usage_total['input']} / out {usage_total['output']}"
                      + (f" / ${usage_total['cost_usd']:.4f}" if usage_total["cost_usd"] else ""))
         (proj.meta / "metrics").mkdir(exist_ok=True)
-        with open(proj.meta / "metrics" / "costs.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"run": rid, "backend": backend.name, "model": backend.model,
-                                "sources": len(todo) - len(failures), **usage_total},
-                               ensure_ascii=False) + "\n")
+        if todo:
+            with open(proj.meta / "metrics" / "costs.jsonl", "a", encoding="utf-8") as f:
+                f.write(json.dumps({"run": rid, "backend": backend.name, "model": backend.model,
+                                    "sources": len(todo) - len(failures), **usage_total},
+                                   ensure_ascii=False) + "\n")
 
-        proj.log(f"compile 실행 (CLI, {rid}, {backend.name}/{backend.model})",
+        via = f"{backend.name}/{backend.model}" if backend else "요청 처리만"
+        proj.log(f"compile 실행 (CLI, {rid}, {via})",
                  report + [f"실패 {len(failures)}건: " + "; ".join(failures)] * bool(failures)
                  + [cost_line])
-        print(f"\n✓ 편찬 완료 — 산출 {len(report)}건, 실패 {len(failures)}건, {cost_line}")
+        tail = (f"\n✓ 편찬 완료 — 산출 {len(report) - req_held}건, "
+                f"실패 {len(failures)}건, {cost_line}")
+        if req_done or req_held:
+            tail += f"\n  편찬 요청: 제안 전환 {req_done}건" + (f", 보류 {req_held}건" if req_held else "")
+        if req_held:
+            tail += ("\n  보류 요청은 10_Inbox/_requests/ 에 남습니다 — 대상 경로를 고치거나 "
+                     "파일을 지우세요.")
+        print(tail)
         for r in report:
             print(f"  - {r}")
         if failures:

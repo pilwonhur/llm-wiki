@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import search_cmd
-from .core import Project, frontmatter, nfc, require_project, today
+from .core import Project, frontmatter, nfc, require_project, today, unique_path
 
 PROTOCOL_VERSION = "2024-11-05"
 
@@ -81,8 +81,7 @@ def _call(proj: Project, name: str, a: dict) -> str:
 
     if name == "wiki_request_edit":
         d = proj.root / "10_Inbox" / "_requests"
-        d.mkdir(parents=True, exist_ok=True)
-        fn = d / f"{today()}-{datetime.now().strftime('%H%M%S')}-요청.md"
+        fn = unique_path(d, f"{today()}-{datetime.now().strftime('%H%M%S')}-요청")
         fn.write_text(f"# 편찬 요청 (외부 비서 경유)\n\n- 요청자: {a['author']}\n"
                       f"- 대상: {a['path']}\n- 일시: {today()}\n\n## 제안\n{a['suggestion']}\n\n"
                       f"## 근거\n{a.get('rationale', '')}\n", encoding="utf-8")
@@ -107,7 +106,7 @@ def _call(proj: Project, name: str, a: dict) -> str:
         bad = [i for i in a["items"] if i.get("kind") == "web" and not i.get("source_urls")]
         if bad:
             return "오류: web 유형은 source_urls(URL) 없이는 승격 불가 (F10.3)."
-        fn = d / f"{today()}-{datetime.now().strftime('%H%M%S')}-qa.md"
+        fn = unique_path(d, f"{today()}-{datetime.now().strftime('%H%M%S')}-qa")
         body = [f"# Q&A 세션 ({today()})", f"- 질문자: {a['asker']}",
                 f"- 질문: {a['question']}", ""]
         for i, it in enumerate(a["items"], 1):

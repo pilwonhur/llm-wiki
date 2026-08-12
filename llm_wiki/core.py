@@ -45,6 +45,21 @@ def run_id() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
+def unique_path(directory: Path, stem: str, suffix: str = ".md") -> Path:
+    """비어 있는 경로를 돌려준다 — 같은 초에 두 건이 들어와도 덮어쓰지 않게.
+
+    Q&A·편찬 요청 제출은 초 단위 이름을 쓰는데, 연속 제출이 같은 초에 걸리면
+    조용히 서로를 지웠다.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    p = directory / f"{stem}{suffix}"
+    n = 2
+    while p.exists():
+        p = directory / f"{stem}-{n}{suffix}"
+        n += 1
+    return p
+
+
 def sha256_file(p: Path) -> str:
     h = hashlib.sha256()
     with open(p, "rb") as f:

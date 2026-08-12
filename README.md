@@ -130,7 +130,7 @@ $ llm-wiki audit                   # ⑥ 품질 감사 (링크·페이지·statu
 |---|---|
 | `init [경로] [--yes]` | 프로젝트 생성 + 온보딩 (멱등) |
 | `ingest [--yes]` | Inbox 접수: 해시·중복·파일명 정규화·업로더 귀속·분류 |
-| `compile` | 편찬: 백업 → 자료당 LLM 호출 → 코드 검증 → 쓰기 → 비용 기록 |
+| `compile` | 편찬: 백업 → 자료당 LLM 호출 → 코드 검증 → 쓰기 → 비용 기록. 대기 중인 편찬 요청(`_requests`)도 제안으로 전환 |
 | `review` | 검토 대기 목록 |
 | `review apply <이름>` / `apply --all` / `reject <이름> --reason` | 제안 승인·거부 |
 | `audit` | 품질 감사 리포트 (`.llm-wiki/audit/`) |
@@ -236,7 +236,7 @@ args `["serve-mcp", "--project", "<프로젝트 경로>"]`로 등록 — 형식�
 | `wiki_search` | 전문 검색 (질의는 실명과 함께 관심도 로그에 기록) | — |
 | `wiki_read` | 문서 읽기 (30_Wiki 한정) | — |
 | `wiki_status` | 현황 요약 | — |
-| `wiki_request_edit` | 변경 요청 제출 → `10_Inbox/_requests/` | 요청만 |
+| `wiki_request_edit` | 변경 요청 제출 → `10_Inbox/_requests/` → 다음 `compile`이 `_Proposals` 제안으로 전환 → 사람이 `review apply` | 요청만 |
 | `wiki_save_qa` | 사람이 동의한 Q&A 신규 정보 제출 → `10_Inbox/_qa/` (web 유형은 URL 필수) | 제출만 |
 | `wiki_add_comment` | 코멘트 append (기록 전용 — 편찬 근거로 안 쓰임) | append만 |
 | `wiki_activity` | 구성원 활동 요약 (업로드·질의·검토·코멘트) | — |

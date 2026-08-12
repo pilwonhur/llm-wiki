@@ -9,6 +9,27 @@ GIST HUR Group LLM-Wiki의 버전별 변경 이력. 형식은 [Keep a Changelog]
 
 업데이트: `pipx reinstall llm-wiki` / 버전 확인: `llm-wiki --version`
 
+## [0.6.0] — 2026-08-12
+
+편찬 요청(`_requests`) 환류를 이었다 — 이제 MCP의 세 제출 창구가 모두 Wiki까지 도달한다.
+
+### Added
+- **`compile`이 `10_Inbox/_requests/` 를 처리한다** — MCP `wiki_request_edit` 로 들어온
+  변경 요청을 `30_Wiki/_Proposals/` 제안서로 변환하고, 원본 요청은
+  `90_Archive/_requests/` 로 옮겨 재처리를 막는다. 이후는 기존 경로 그대로:
+  사람이 `llm-wiki review apply` 로 승인해야 본문에 반영된다
+  - **LLM을 부르지 않는다** — 제안서는 결정적으로 만들고, 병합은 `review apply`의 몫.
+    덕분에 백엔드가 없어도 요청 처리가 되고, 미처리 원자료가 0건이어도 compile이 돈다
+  - 대상은 `30_Wiki` 안의 **기존** 문서여야 한다 (요청으로 새 문서를 만들지 않는다).
+    대상이 없거나 밖이면 보류하고 요청 파일을 남긴다
+  - 제안서 frontmatter에 `target`·`requested_by`·`status_at_request`·`source_request` 기록
+
+### Fixed
+- **같은 초에 들어온 제출물이 서로를 덮어쓰던 문제** — Q&A(`_qa`)·편찬 요청(`_requests`)
+  파일명이 초 단위라 연속 제출이 조용히 유실됐다. `unique_path()` 로 `-2`, `-3` 을 붙인다
+  (MCP `wiki_save_qa`·`wiki_request_edit`, `ask --save-qa` 모두 해당)
+- 같은 문서에 요청이 여러 건이면 제안서도 파일명이 겹쳐 하나만 남던 문제 (같은 원인)
+
 ## [0.5.1] — 2026-08-12
 
 ### Changed

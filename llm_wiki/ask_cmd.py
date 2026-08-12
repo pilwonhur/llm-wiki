@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import backends, search_cmd
-from .core import Project, require_project, today
+from .core import Project, require_project, today, unique_path
 
 DOC_CHARS = 6000        # 문서 하나에서 프롬프트에 넣을 최대 길이
 TOTAL_CHARS = 40000     # 근거 전체 상한
@@ -95,9 +95,8 @@ def _bg_items(answer: str) -> list[str]:
 
 def _save_qa(proj: Project, question: str, asker: str, items: list[str]) -> Path:
     """MCP wiki_save_qa와 동일한 형식·경로 — ingest → compile 이 이어받는다."""
-    d = proj.root / "10_Inbox" / "_qa"
-    d.mkdir(parents=True, exist_ok=True)
-    fn = d / f"{today()}-{datetime.now().strftime('%H%M%S')}-qa.md"
+    fn = unique_path(proj.root / "10_Inbox" / "_qa",
+                     f"{today()}-{datetime.now().strftime('%H%M%S')}-qa")
     body = [f"# Q&A 세션 ({today()})", f"- 질문자: {asker}",
             f"- 질문: {question}", "- 경로: llm-wiki ask (사람 동의 후 저장)", ""]
     for i, it in enumerate(items, 1):
