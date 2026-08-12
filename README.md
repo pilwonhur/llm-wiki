@@ -40,7 +40,6 @@ $ pipx install -e .
 |---|---|
 | Claude Code (`claude`) | Anthropic **OAuth 구독** 편찬 백엔드 + 에이전트 입구·MCP 클라이언트 |
 | Codex CLI (`codex`) | OpenAI **OAuth 구독** 편찬 백엔드 + 에이전트 입구·MCP 클라이언트 |
-| Gemini CLI (`gemini`) | Gemini **OAuth 구독** 편찬 백엔드 + MCP 클라이언트 |
 | Antigravity CLI (`agy`) | Antigravity **OAuth 구독** 편찬 백엔드 + 에이전트 입구·MCP 클라이언트 |
 | `pipx inject llm-wiki anthropic\|openai\|google-genai` + 각 API key | API key 편찬 백엔드 (CLI 없이) |
 | Ollama | 로컬 LLM 편찬 백엔드 — 민감 프로젝트·오프라인 |
@@ -280,9 +279,14 @@ $ llm-wiki models auth "api_key,oauth"   # 인증 우선순위 변경
 |---|---|---|
 | Anthropic | `claude` CLI (Claude Code 헤드리스) | `ANTHROPIC_API_KEY` + `anthropic` |
 | OpenAI | `codex` CLI (`codex exec`) | `OPENAI_API_KEY` + `openai` |
-| Google Gemini | `gemini` CLI (`gemini -p`) | `GEMINI_API_KEY`(또는 `GOOGLE_API_KEY`) + `google-genai` |
+| Google Gemini | — (개인 구독 종료) | `GEMINI_API_KEY`(또는 `GOOGLE_API_KEY`) + `google-genai` |
 | Antigravity | `agy` CLI (`agy -p`) | — (구독 전용) |
 | Ollama | — | 로컬 `localhost:11434` |
+
+> Gemini CLI(`gemini`)의 개인 구독은 종료됐다 (`IneligibleTierError` — Antigravity로 이관).
+> 그래서 **Gemini 구독 경로는 Antigravity(agy)** 를 쓰고, `gemini-3.6-flash` 같은 직접 호출은
+> API key 경로로 남는다. 조직 계정 등으로 `gemini` CLI를 아직 쓸 수 있으면
+> config `llm.cli_path_gemini` 에 실행 파일 경로를 지정해 켤 수 있다.
 
 Antigravity 모델 ID는 자체 체계다 (`gemini-3.6-flash-high`, `claude-sonnet-4-6`,
 `gpt-oss-120b-medium` …). 같은 이름의 Gemini 직접 호출과 구분되도록 레지스트리에

@@ -1,8 +1,9 @@
-"""LLM 백엔드 추상화 (§3.3): 공급자(Anthropic·OpenAI·Gemini) × 인증(OAuth·API key) × 로컬(Ollama).
+"""LLM 백엔드 추상화 (§3.3): 공급자(Anthropic·OpenAI·Antigravity·Gemini) × 인증(OAuth·API key) × 로컬(Ollama).
 
 - 모델명이 공급자를 결정한다: 레지스트리(~/.llm-wiki/models.yaml) 조회 → 접두사 추정.
 - 인증 방식은 config `llm.auth_order` 순서로 시도한다 (기본: oauth → api_key → ollama).
-  OAuth는 각 공급자의 구독형 CLI(claude·codex·gemini)를, API key는 공식 SDK를 쓴다.
+  OAuth는 각 공급자의 구독형 CLI(claude·codex·agy)를, API key는 공식 SDK를 쓴다.
+  Gemini는 개인 구독 CLI가 종료되어 API key 경로만 기본 제공한다 (구독은 Antigravity).
 - 사용 가능한 경로가 여럿이면 순서대로 묶어 두고 (FallbackBackend) 실행 중 실패 시 다음으로 넘어간다.
 - 민감 프로젝트(external_llm_allowed: false)는 Ollama만 허용 — 코드 수준 강제 (N7).
 - 모든 호출의 토큰·비용을 반환해 CLI가 기록한다 (N3, 기준 ⑤ 이행).
@@ -277,7 +278,12 @@ class CodexCLIBackend(CLIBackend):
 
 
 class GeminiCLIBackend(CLIBackend):
-    """Gemini OAuth 경로 — Gemini CLI 헤드리스 (`gemini -p`)."""
+    """Gemini OAuth 경로 — Gemini CLI 헤드리스 (`gemini -p`).
+
+    개인 구독은 종료됐다 (IneligibleTierError: "no longer supported for Gemini Code
+    Assist for individuals" → Antigravity로 이관). 기본 경로에서 제외되어 있고,
+    조직 계정 등으로 아직 쓸 수 있는 경우에만 `llm.cli_path_gemini` 로 켠다.
+    """
     name = "oauth-gemini"
     provider = "gemini"
     cli = "gemini"
@@ -434,7 +440,11 @@ class OllamaBackend(Backend):
 
 
 OAUTH_BACKENDS = {"anthropic": ClaudeCLIBackend, "openai": CodexCLIBackend,
-                  "gemini": GeminiCLIBackend, "antigravity": AntigravityCLIBackend}
+                  "antigravity": AntigravityCLIBackend}
+# Gemini CLI는 개인 구독이 종료되어(IneligibleTierError — Antigravity로 이관) 기본 경로에서
+# 뺐다. Gemini 구독 경로는 Antigravity(agy)를 쓰고, 직접 호출은 API key 경로로 남는다.
+# 조직 계정 등으로 아직 쓸 수 있으면 config `llm.cli_path_gemini` 에 경로를 지정해 켠다.
+OPT_IN_OAUTH_BACKENDS = {"gemini": GeminiCLIBackend}
 API_BACKENDS = {"anthropic": AnthropicAPIBackend, "openai": OpenAIAPIBackend,
                 "gemini": GeminiAPIBackend}
 
@@ -455,20 +465,35 @@ def _have_package(mod: str) -> bool:
         return False
 
 
-def auth_status(provider: str) -> dict:
+def oauth_backend(provider: str, cfg: dict | None = None):
+    """이 공급자의 OAuth CLI 백엔드 클래스 (없으면 None).
+
+    opt-in 공급자(gemini)는 `llm.cli_path_gemini` 로 경로를 명시했을 때만 켜진다.
+    """
+    if provider in OAUTH_BACKENDS:
+        return OAUTH_BACKENDS[provider]
+    cls = OPT_IN_OAUTH_BACKENDS.get(provider)
+    if cls and ((cfg or {}).get("llm") or {}).get(f"cli_path_{provider}"):
+        return cls
+    return None
+
+
+def auth_status(provider: str, cfg: dict | None = None) -> dict:
     """`models show` 용 — 공급자별로 지금 쓸 수 있는 인증 경로."""
     provider = canon_provider(provider)
     if provider == "ollama":
         return {"ollama": _ollama_alive()}
-    cls = OAUTH_BACKENDS[provider]
+    cls = oauth_backend(provider, cfg)
     if provider not in API_ENV:      # 구독 CLI 전용 공급자 (antigravity)
-        return {"oauth": bool(cls.locate()), "oauth_hint": f"{cls.cli} CLI",
+        return {"oauth": bool(cls and cls.locate(cfg)),
+                "oauth_hint": f"{cls.cli} CLI" if cls else "없음",
                 "api_key": False, "api_key_hint": "지원 안 함 (구독 CLI 전용)"}
     env_ok = any(os.environ.get(e) for e in API_ENV[provider])
     mod, pkg = API_PACKAGE[provider]
     return {
-        "oauth": bool(cls.locate()),
-        "oauth_hint": f"{cls.cli} CLI",
+        "oauth": bool(cls and cls.locate(cfg)),
+        "oauth_hint": (f"{cls.cli} CLI" if cls
+                       else "개인 구독 종료 — Antigravity(agy) 사용"),
         "api_key": bool(env_ok and _have_package(mod)),
         "api_key_hint": ("/".join(API_ENV[provider])
                          + ("" if env_ok else " 미설정")
@@ -499,9 +524,12 @@ def plan(cfg: dict, role: str = "compile") -> tuple[list[Backend], list[str]]:
 
     candidates, blocked = [], []
     for auth in order:
-        if auth == "oauth" and provider in OAUTH_BACKENDS:
-            cls = OAUTH_BACKENDS[provider]
-            if cls.locate(cfg):
+        if auth == "oauth" and provider != "ollama":
+            cls = oauth_backend(provider, cfg)
+            if cls is None:
+                blocked.append(f"oauth({PROVIDER_LABEL.get(provider, provider)}는 "
+                               "구독 CLI 경로 없음 — Antigravity(agy) 사용)")
+            elif cls.locate(cfg):
                 candidates.append(cls(model, cfg))
             else:
                 blocked.append(f"oauth({cls.cli} CLI 미설치)")
@@ -538,9 +566,11 @@ def resolve(cfg: dict, role: str = "compile") -> Backend:
         hint = "민감 프로젝트는 Ollama만 허용됩니다 — Ollama를 설치·실행하세요."
     else:
         prov = provider_of(model)
-        cli = OAUTH_BACKENDS[prov].cli if prov in OAUTH_BACKENDS else "ollama"
+        cls = oauth_backend(prov, cfg)
         env = "/".join(API_ENV.get(prov, ()))
-        need = f"{cli} CLI 로그인(OAuth)" + (f" 또는 {env} 설정" if env else " (API key 경로 없음)")
+        need = " 또는 ".join(x for x in [
+            f"{cls.cli} CLI 로그인(OAuth)" if cls else "",
+            f"{env} 설정" if env else ""] if x) or "Antigravity(agy) 구독 경로"
         hint = (f"{PROVIDER_LABEL.get(prov, prov)} 를 쓰려면 {need}이 필요합니다. "
                 "`llm-wiki models show` 로 현황을 보고, "
                 "`llm-wiki models use` 로 다른 모델을 고를 수 있습니다.")

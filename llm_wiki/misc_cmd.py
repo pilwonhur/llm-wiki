@@ -314,7 +314,7 @@ def _print_status(cfg: dict, where: str) -> None:
     print(f"  인증 순서   {', '.join(order) if external else 'ollama (강제)'}")
     print("\n공급자별 사용 가능 경로")
     for prov in backends.PROVIDERS:
-        st = backends.auth_status(prov)
+        st = backends.auth_status(prov, cfg)
         if prov == "ollama":
             print(f"  {backends.PROVIDER_LABEL[prov]:<16} "
                   f"{'○ 실행 중' if st['ollama'] else '× 미실행'}")
@@ -330,7 +330,7 @@ def _pick_model(reg: dict) -> str | None:
     provs = list(backends.PROVIDERS)
     print("\n공급자를 고르세요:")
     for i, p in enumerate(provs, 1):
-        st = backends.auth_status(p)
+        st = backends.auth_status(p)   # 대화형 선택 — 유효 설정 없이 전역 기준
         avail = ("실행 중" if st.get("ollama") else "미실행") if p == "ollama" else \
             " ".join(x for x in [("OAuth" if st["oauth"] else ""),
                                  ("API key" if st["api_key"] else "")] if x) or "사용 가능 경로 없음"

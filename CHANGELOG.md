@@ -9,6 +9,18 @@ GIST HUR Group LLM-Wiki의 버전별 변경 이력. 형식은 [Keep a Changelog]
 
 업데이트: `pipx reinstall llm-wiki` / 버전 확인: `llm-wiki --version`
 
+## [0.5.1] — 2026-08-12
+
+### Changed
+- **Gemini CLI(`gemini`)를 기본 OAuth 경로에서 제외** — 개인 구독이 종료됐다
+  (`IneligibleTierError: no longer supported for Gemini Code Assist for individuals`
+  → Antigravity로 이관). Gemini 구독 경로는 Antigravity(`agy`)를 쓰고,
+  `gemini-3.6-flash` 같은 직접 호출은 API key 경로로 남는다.
+  조직 계정 등으로 아직 쓸 수 있으면 config `llm.cli_path_gemini` 로 켠다
+- OAuth 경로가 없는 공급자를 API key 경로가 없는 공급자(antigravity)와 대칭으로 처리 —
+  `oauth_backend()` 도입. `models show`는 "개인 구독 종료 — Antigravity(agy) 사용"으로,
+  `plan()`은 막힌 이유에 대안을 함께 표시한다
+
 ## [0.5.0] — 2026-08-12
 
 Antigravity CLI(`agy`) 지원 — 네 번째 공급자이자 네 번째 에이전트 입구.
