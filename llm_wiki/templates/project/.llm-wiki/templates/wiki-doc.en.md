@@ -7,7 +7,7 @@ updated: YYYY-MM-DD
 reviewer:             # filled in by a human
 aliases: []           # other spellings of the same concept (native name, acronym, ...)
 sources: []           # relative paths of the source material behind this document
-generated_by: llm-wiki phase0
+generated_by: llm-wiki
 ---
 
 # Concept name

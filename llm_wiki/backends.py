@@ -234,8 +234,11 @@ class ClaudeCLIBackend(CLIBackend):
         except json.JSONDecodeError:
             return r.stdout, {}
         usage = data.get("usage", {}) or {}
+        # input_tokens는 캐시 미적중분만이다 — 에이전트 실행은 대부분 캐시 읽기·쓰기로 잡힌다
+        tin = sum(usage.get(k) or 0 for k in
+                  ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
         return data.get("result", ""), {
-            "input": usage.get("input_tokens"), "output": usage.get("output_tokens"),
+            "input": tin or usage.get("input_tokens"), "output": usage.get("output_tokens"),
             "cost_usd": data.get("total_cost_usd")}
 
 

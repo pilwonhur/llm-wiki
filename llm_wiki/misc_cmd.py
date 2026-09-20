@@ -233,8 +233,9 @@ def cmd_setup_agent(args) -> None:
     """전역 에이전트 어댑터 설치 — 경로 걱정 없이 어디서든 실행 가능.
 
     Claude Code: 전역 /wiki-init 스킬 (~/.claude/skills/) — 프로젝트 스킬은 init이 설치.
-    Codex: /wiki-init·ingest·compile·audit 프롬프트 (~/.codex/prompts/) — Codex는
-    프로젝트 프롬프트를 자동 인식하지 않으므로 전역 1회 설치가 4개 명령 전부를 커버.
+    Codex: /wiki-init + 프로젝트 명령 4종(ingest·compile·audit·ask) 프롬프트
+    (~/.codex/prompts/) — Codex는 프로젝트 프롬프트를 자동 인식하지 않으므로 전역 1회
+    설치가 전부를 커버.
     """
     import shutil as _sh
 

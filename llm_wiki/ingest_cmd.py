@@ -17,7 +17,8 @@ SKIP_NAMES = {".gitkeep", ".DS_Store"}
 
 
 def _guess_type(name: str) -> str:
-    n = name.lower()
+    # macOS·Dropbox는 한글 파일명을 NFD로 돌려준다 — 정규화 없이는 한글 키워드가 맞지 않는다
+    n = nfc(name).lower()
     if any(k in n for k in ("회의", "meeting", "minutes")):
         return "meeting"
     if any(k in n for k in ("계획서", "proposal", "제안서", "별첨")):
@@ -75,6 +76,8 @@ def _ingest(proj: Project, assume_yes: bool) -> None:
         return
 
     done, dups, held, log = [], [], [], []
+    plan = []  # (파일, rel, uploader, digest, typ) — 1차: 분류 확정만, 파일은 건드리지 않는다
+    seen = dict(known_hashes)
     for f in files:
         rel = f.relative_to(inbox)
         # Q&A 제출물(ask·MCP wiki_save_qa)은 분류가 정해져 있고 귀속은 질문자다
@@ -88,21 +91,32 @@ def _ingest(proj: Project, assume_yes: bool) -> None:
             log.append(f"미등록 업로더 '{uploader}' — members.md 확인 요망 (등록은 진행)")
 
         digest = sha256_file(f)
-        if digest in known_hashes:
-            dups.append(f"{rel} (기존: {known_hashes[digest]})")
+        if digest in seen:
+            dups.append(f"{rel} (기존: {seen[digest]})")
             continue
+        seen[digest] = str(rel)
 
         guess = "qa" if is_qa else _guess_type(f.name)
         if assume_yes or is_qa:
             typ = guess
         else:
             keys = "/".join(SOURCE_TYPES)
-            ans = input(f"  {rel}\n    분류 [{guess}] ({keys}, h=보류): ").strip().lower()
+            try:
+                ans = input(f"  {rel}\n    분류 [{guess}] ({keys}, h=보류): ").strip().lower()
+            except EOFError:
+                # 비대화형(에이전트·cron)에서 답이 모자라면 아무것도 옮기지 않고 끝낸다
+                raise SystemExit(
+                    "\n입력이 끊겼습니다 — 이동·등록된 파일은 없습니다.\n"
+                    "비대화형 실행은 `llm-wiki ingest --yes`(추정 분류 수용)를 쓰거나 "
+                    "분류 답을 표준입력으로 넘기세요.")
             if ans == "h":
                 held.append(str(rel))
                 continue
             typ = ans if ans in SOURCE_TYPES else guess
+        plan.append((f, rel, uploader, digest, typ))
 
+    # 2차: 이동 + 등록. 파일마다 manifest를 저장해 중간에 죽어도 미등록 원자료가 남지 않는다
+    for f, rel, uploader, digest, typ in plan:
         new_name = safe_name(f.name)  # F1.7
         dest_dir = proj.root / "20_Sources" / SOURCE_TYPES[typ]
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -124,7 +138,7 @@ def _ingest(proj: Project, assume_yes: bool) -> None:
             entry["original_name"] = nfc(f.name)
             log.append(f"파일명 정규화: {f.name} → {new_name}")
         manifest["sources"].append(entry)
-        known_hashes[digest] = entry["path"]
+        proj.save_manifest(manifest)
         done.append(f"{rel} → {entry['path']} ({typ}, {uploader})")
 
         # 업로더 하위폴더가 비면 유지 (다음 업로드용), 파일만 이동됨

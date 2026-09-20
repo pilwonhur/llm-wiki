@@ -14,11 +14,12 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import time
 from pathlib import Path
 
-from . import backends
+from . import __version__, backends
 from .core import (LANG_NAME, WARN_TEXT, Project, field_pattern, frontmatter,
-                   heading, heading_pattern, lang_of, nfc, require_project,
+                   heading, heading_pattern, in_wiki, lang_of, nfc, require_project,
                    run_id, today, unique_path)
 
 PROTOCOL_HEAD = """
@@ -127,14 +128,31 @@ def _force_draft(content: str) -> str:
     return content
 
 
-def _apply(proj: Project, rid: str, items: list, report: list) -> None:
+def _stamp(content: str, fields: dict) -> str:
+    """frontmatter의 출처 필드를 코드로 강제한다 — 모델이 폴더명에서 프로젝트명을
+    추측하거나 템플릿의 자리표시 문자열을 그대로 두는 일을 막는다. 본문은 건드리지 않는다."""
+    m = re.match(r"(---\n)(.*?\n)(---[ \t]*(?:\n|$))", content, re.S)
+    if not m:
+        return content
+    fm = m.group(2)
+    for key, val in fields.items():
+        line = f"{key}: {val}"
+        if re.search(rf"^{key}:.*$", fm, re.M):
+            fm = re.sub(rf"^{key}:.*$", lambda _m, _l=line: _l, fm, count=1, flags=re.M)
+        else:
+            fm += line + "\n"
+    return m.group(1) + fm + m.group(3) + content[m.end():]
+
+
+def _apply(proj: Project, rid: str, items: list, report: list,
+           stamp: dict | None = None) -> None:
     for it in items:
         action = it.get("action")
         rel = nfc(str(it.get("path", "")))
         content = it.get("content", "")
         target = (proj.root / rel).resolve()
         # N1: 경로 화이트리스트 — 30_Wiki 밖 쓰기 차단
-        if not str(target).startswith(str((proj.root / "30_Wiki").resolve())):
+        if not in_wiki(proj.root, target):
             report.append(f"차단: 30_Wiki 밖 쓰기 시도 ({rel})")
             continue
         if action == "propose" or "_Proposals" in rel:
@@ -145,6 +163,8 @@ def _apply(proj: Project, rid: str, items: list, report: list) -> None:
             report.append(f"제안: {target.relative_to(proj.root)}")
             continue
         content = _force_draft(content)  # F2.9 코드 강제
+        if stamp:
+            content = _stamp(content, stamp)
         if target.exists():
             old = target.read_text(encoding="utf-8")
             old_fm = frontmatter(old)
@@ -204,7 +224,6 @@ def _process_requests(proj: Project, rid: str, report: list) -> tuple[int, int]:
     if not reqs:
         return 0, 0
     lang = lang_of(proj.config())
-    wiki = (proj.root / "30_Wiki").resolve()
     prop_dir = proj.root / "30_Wiki" / "_Proposals"
     archive = proj.root / "90_Archive" / "_requests"
     done = held = 0
@@ -213,7 +232,7 @@ def _process_requests(proj: Project, rid: str, report: list) -> tuple[int, int]:
         rel = nfc(r["target"])
         target = (proj.root / rel).resolve() if rel else None
         # N1: 대상은 30_Wiki 안의 기존 문서여야 한다 (요청으로 새 문서를 만들지 않는다)
-        if not rel or not str(target).startswith(str(wiki)) or not target.exists():
+        if not rel or not in_wiki(proj.root, target) or not target.exists():
             report.append(f"요청 보류: {f.name} — 대상 문서를 찾지 못함 ({rel or '대상 미기재'})")
             held += 1
             continue
@@ -265,23 +284,31 @@ def cmd_compile(args) -> None:
             head += f" | 백엔드 {backend.describe()} | 대상 {len(todo)}건"
         if reqs:
             head += f" | 편찬 요청 {len(reqs)}건"
-        print(head)
+        print(head, flush=True)
         ctx = _read_context(proj)
+        stamp = None
+        if backend:
+            pname = str(cfg.get("project") or proj.root.name).replace('"', "'")
+            stamp = {"project": f'"{pname}"',
+                     "generated_by": f"llm-wiki {__version__} / {backend.describe()} / run {rid}"}
         report, failures, usage_total = [], [], {"input": 0, "output": 0, "cost_usd": 0.0}
 
         # 편찬 요청 → 제안 변환 (LLM 불필요, 사람의 review apply 를 거친다)
         req_done, req_held = _process_requests(proj, rid, report)
-        for src in todo:  # 순차 큐 (F2.1) — 실패해도 다음 파일 진행
+        for i, src in enumerate(todo, 1):  # 순차 큐 (F2.1) — 실패해도 다음 파일 진행
             name = Path(src["path"]).name
             try:
                 index = _wiki_index(proj)  # 문서가 늘어나므로 매 파일 갱신
                 text = _source_text(proj, src, agentic)
                 prompt = _build_prompt(proj, src, index, ctx, template, agentic,
                                        text, lang_of(cfg))
-                print(f"  · {name} 편찬 중...")
+                # 로그·파이프로 돌릴 때도 진행이 보이게 즉시 내보낸다
+                print(f"  · [{i}/{len(todo)}] {name} 편찬 중...", flush=True)
+                t0 = time.monotonic()
                 out, usage = backend.complete(prompt, cwd=proj.root)
                 items = _extract_json(out)
-                _apply(proj, rid, items, report)
+                _apply(proj, rid, items, report, stamp)
+                print(f"    완료 ({time.monotonic() - t0:.0f}초, 산출 {len(items)}건)", flush=True)
                 src["processed"] = True
                 proj.save_manifest(m)  # 파일 단위로 저장 — 중단 시 이어서 (C9)
                 for k in ("input", "output"):
@@ -291,11 +318,15 @@ def cmd_compile(args) -> None:
                     usage_total["cost_usd"] += usage["cost_usd"]
             except Exception as e:  # 실패 격리 (C8)
                 failures.append(f"{name}: {e}")
-                print(f"    실패: {e}")
+                print(f"    실패: {e}", flush=True)
 
         # 비용 기록 (N3)
-        cost_line = (f"토큰 in {usage_total['input']} / out {usage_total['output']}"
-                     + (f" / ${usage_total['cost_usd']:.4f}" if usage_total["cost_usd"] else ""))
+        cost = usage_total["cost_usd"]
+        # 구독(OAuth) 경로의 금액은 CLI가 보고한 환산치 — 실제 청구액이 아니다
+        cost_txt = "" if not cost else (
+            f" / ≈${cost:.2f} (구독 환산, 별도 과금 아님)"
+            if backend and backend.name.startswith("oauth") else f" / ${cost:.4f}")
+        cost_line = f"토큰 in {usage_total['input']} / out {usage_total['output']}{cost_txt}"
         (proj.meta / "metrics").mkdir(exist_ok=True)
         if todo:
             with open(proj.meta / "metrics" / "costs.jsonl", "a", encoding="utf-8") as f:

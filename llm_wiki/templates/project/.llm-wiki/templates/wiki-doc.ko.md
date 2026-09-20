@@ -7,7 +7,7 @@ updated: YYYY-MM-DD
 reviewer:             # 사람이 기입
 aliases: []           # 같은 개념의 다른 표기 (영문명, 약어 등)
 sources: []           # 근거 원자료 상대경로 목록
-generated_by: llm-wiki phase0
+generated_by: llm-wiki
 ---
 
 # 개념 이름

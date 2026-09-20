@@ -101,6 +101,12 @@ def today() -> str:
     return date.today().isoformat()
 
 
+def in_wiki(root: Path, target: Path) -> bool:
+    """target이 root/30_Wiki 안인가 (N1). 문자열 접두사 비교는 `30_Wiki_x/` 같은
+    형제 폴더를 통과시키므로 경로 단위로 본다. target은 resolve()된 경로."""
+    return target.is_relative_to((root / "30_Wiki").resolve())
+
+
 def run_id() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 

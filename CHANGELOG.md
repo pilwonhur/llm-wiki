@@ -9,6 +9,46 @@ GIST HUR Group LLM-Wiki의 버전별 변경 이력. 형식은 [Keep a Changelog]
 
 업데이트: `pipx reinstall llm-wiki` / 버전 확인: `llm-wiki --version`
 
+## [0.7.2] — 2026-09-20
+
+새 프로젝트에서의 첫 실사용(init → ingest → compile → audit)에서 나온 문제를 고친다.
+기존 프로젝트는 그대로 쓸 수 있다 — 다시 `init` 할 필요 없다.
+
+### Fixed
+- **macOS에서 ingest 분류 추정이 빗나가던 문제** — macOS·Dropbox는 한글 파일명을 NFD로
+  돌려주는데, 분류 키워드(`회의`·`계획서`·`제안서`·`실험` 등)는 NFC 문자열이라 부분 일치가
+  항상 실패했다. `5차 기획회의….pdf`가 `paper`로 추정되고, `ingest --yes` 배치에서는 한글
+  이름 회의록·제안서가 전부 `Papers/`로 들어갔다. 파일명을 NFC로 정규화한 뒤 비교한다
+- **분류 질문 도중 입력이 끊기면 manifest에 없는 원자료가 생기던 문제** — 파일을 하나씩
+  옮기면서 manifest는 맨 끝에 한 번만 저장했다. 에이전트 CLI나 cron처럼 TTY가 없는 곳에서
+  `--yes` 없이 실행하면 `input()`이 EOFError로 죽고, 그때까지 옮겨진 파일은 등록되지 않은
+  채 `20_Sources`에 남았다. 이제 분류를 전부 확정한 **뒤에** 옮기고(입력이 끊기면 아무것도
+  옮기지 않고 안내와 함께 종료), 파일마다 manifest를 저장한다. 분류 답을 표준입력으로
+  넘기는 사용은 그대로 동작한다
+- **`30_Wiki` 경로 화이트리스트가 접두사 비교였던 문제 (N1)** — `30_Wiki_x/…` 같은 형제
+  폴더가 "30_Wiki 안"으로 통과했다. compile의 쓰기 차단과 편찬 요청 대상 검사, MCP의
+  `wiki_read`·`wiki_add_comment` 4곳을 경로 단위 검사(`core.in_wiki`)로 바꿨다
+- **편찬 문서 frontmatter의 `project`·`generated_by`가 부정확하던 문제** — 프로젝트명이
+  프롬프트에 없어 모델이 폴더명에서 추측했고, `generated_by`는 템플릿의 `llm-wiki phase0`이
+  그대로 남았다. `status: draft` 강제와 같은 방식으로 코드가 채운다: `project`는 config 값,
+  `generated_by`는 `llm-wiki <버전> / <백엔드>/<모델> / run <실행ID>` — 어느 모델이 어느
+  실행에서 쓴 문서인지 문서 자체에 남는다
+- **Claude CLI 백엔드의 입력 토큰이 `in 20`처럼 터무니없이 작게 찍히던 문제** —
+  `input_tokens`만 읽고 캐시 읽기·쓰기 토큰을 빼먹었다. 셋을 합산한다
+
+### Changed
+- compile 진행 표시: `[2/4]` 순번, 자료별 소요 시간·산출 건수, 즉시 flush — 로그 파일이나
+  파이프로 돌려도 끝날 때까지 빈 화면으로 남지 않는다
+- 구독(OAuth) 경로의 금액은 `≈$6.20 (구독 환산, 별도 과금 아님)`으로 표기 — CLI가 보고한
+  환산치일 뿐 청구액이 아니다. API key 경로는 종전대로 `$` 금액
+- 프로젝트 `adapters/codex/`에 `wiki-ask.md` 추가 (0.7.1에서 전역 Codex 프롬프트에만 넣고
+  프로젝트 사본에는 빠져 있었다)
+
+### Added
+- 회귀 테스트 `tests/test_regressions.py` — 위 버그 4건을 고정한다. 추가 의존성 없이
+  `python -m unittest discover -s tests`. `HOME`을 임시 폴더로 돌려 사용자의 전역 설정을
+  건드리지 않고, LLM은 `LLM_WIKI_FAKE` 훅으로 대체한다
+
 ## [0.7.1] — 2026-08-12
 
 ### Added

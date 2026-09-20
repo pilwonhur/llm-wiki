@@ -14,7 +14,7 @@ from pathlib import Path
 
 from . import search_cmd
 from .core import (Project, field, frontmatter, heading, heading_pattern,
-                   lang_of, nfc, require_project, today, unique_path)
+                   in_wiki, lang_of, nfc, require_project, today, unique_path)
 
 PROTOCOL_VERSION = "2024-11-05"
 
@@ -63,8 +63,7 @@ def _call(proj: Project, name: str, a: dict) -> str:
 
     if name == "wiki_read":
         p = (proj.root / a["path"]).resolve()
-        wiki = (proj.root / "30_Wiki").resolve()
-        if not str(p).startswith(str(wiki)) or not p.suffix == ".md" or not p.exists():
+        if not in_wiki(proj.root, p) or not p.suffix == ".md" or not p.exists():
             return "오류: 30_Wiki 안의 .md 문서만 읽을 수 있습니다."
         return p.read_text(encoding="utf-8")
 
@@ -95,7 +94,7 @@ def _call(proj: Project, name: str, a: dict) -> str:
 
     if name == "wiki_add_comment":
         p = (proj.root / a["path"]).resolve()
-        if not str(p).startswith(str((proj.root / "30_Wiki").resolve())) or not p.exists():
+        if not in_wiki(proj.root, p) or not p.exists():
             return "오류: 30_Wiki 안의 문서가 아닙니다."
         text = p.read_text(encoding="utf-8")
         line = f"- {today()} **{a['author']}**: {a['comment']}"
