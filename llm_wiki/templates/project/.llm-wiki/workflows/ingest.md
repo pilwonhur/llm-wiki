@@ -8,8 +8,8 @@
 2. 각 파일에 대해 순서대로:
    1. **해시 계산**: SHA-256 (macOS/Linux `shasum -a 256`, Windows `certutil -hashfile <파일> SHA256`).
    2. **중복 검사**: `.llm-wiki/manifest.json`에서 동일 해시 검색. 있으면 이동하지 않고 로그에 "중복 (기존: <경로>)"으로 기록하고 다음 파일로 넘어간다. 파일은 삭제하지 않는다 (사람이 결정).
-   3. **메타데이터 추출**: 내용을 읽고 제목, 저자, 연도, 자료 종류를 파악한다. 종류: `paper`(논문) / `meeting`(회의록·회의자료) / `experiment`(실험 기록) / `dataset`(데이터셋 설명) / `webclip`(웹 자료) / `qa`(Q&A 세션) / `proposal`(연구계획서·제안서·과제 문서).
-   4. **분류·이동**: 종류가 명확하면 대응 폴더로 이동한다 — Papers / Meeting-Notes / Experiments / Datasets / Web-Clips / QA-Sessions / Proposals. 파일명은 유지한다. **종류가 불명확하면 이동하지 않고** 질문 목록에 "어느 분류인지" 기록한다.
+   3. **메타데이터 추출**: 내용을 읽고 제목, 저자, 연도, 자료 종류를 파악한다. 종류: `paper`(논문) / `meeting`(회의록·회의자료) / `experiment`(실험 기록) / `dataset`(데이터셋 설명) / `webclip`(웹 자료) / `qa`(Q&A 세션) / `proposal`(이 과제 자체의 문서 — 계획서·제안서·보고서 양식·과제 소개) / `reference`(외부 주체가 만든 비학술 참고자료 — 기업·기관 소개서, 카탈로그, 사양서, 표준·규격, 보도자료, 외부 발표자료). 학술 논문·학술 보고서만 `paper`, 출처가 URL인 스크랩은 `webclip`.
+   4. **분류·이동**: 종류가 명확하면 대응 폴더로 이동한다 — Papers / Meeting-Notes / Experiments / Datasets / Web-Clips / QA-Sessions / Proposals / References (폴더가 없으면 만든다). 파일명은 유지한다. **종류가 불명확하면 이동하지 않고** 질문 목록에 "어느 분류인지" 기록한다.
    5. **manifest 등록**: `.llm-wiki/manifest.json`의 `sources` 배열에 추가:
       ```json
       {"path": "20_Sources/Papers/파일명.pdf", "hash": "...", "title": "...",

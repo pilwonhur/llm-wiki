@@ -1,4 +1,4 @@
-"""0.7.2 회귀 테스트 — 첫 실사용에서 나온 버그를 고정한다.
+"""회귀 테스트 — 실사용에서 나온 버그를 고정한다 (0.7.2~).
 
 실행: `python -m unittest discover -s tests -v` (추가 의존성 없음).
 CLI를 하위 프로세스로 돌린다. HOME을 임시 폴더로 바꿔 사용자의 `~/.llm-wiki` 전역 설정을
@@ -99,12 +99,85 @@ class IngestTests(ProjectCase):
         self.assertEqual(self.inbox_files(), [])
 
 
+class SourceTypeTests(ProjectCase):
+    """0.8.0 — 참고자료(reference) 분류 + 확신 없는 추정은 paper가 아니라 보류."""
+
+    def test_guess_from_field_filenames(self):
+        from llm_wiki.ingest_cmd import HOLD, _guess_type
+        cases = {  # 2026-09-20·24 실사용에서 사람이 확정한 분류
+            "회의록.pdf": "meeting",
+            "회의자료 송부 메일.pdf": "meeting",
+            "과제 소개 자료.pdf": "proposal",
+            "기획 과제 최종 보고서 양식.pdf": "proposal",
+            "참여기업 회사소개서.pdf": "reference",
+            "제품 카탈로그 2026.pdf": "reference",
+            "kim2026_adaptive_gait.pdf": "paper",
+            "2401.12345v2.pdf": "paper",
+            "협업 요청 메일.pdf": HOLD,    # 예전에는 paper로 떨어졌다
+            "딥리서치 보고서.md": HOLD,
+        }
+        for name, want in cases.items():
+            with self.subTest(name=name):
+                self.assertEqual(_guess_type(nfd(name)), want)
+
+    def test_guess_uses_text_head(self):
+        from llm_wiki.ingest_cmd import HOLD, _guess_type
+        self.assertEqual(_guess_type("notes.md", "---\ntags: [project, meeting-minutes]\n---\n"),
+                         "meeting")
+        self.assertEqual(_guess_type("a.md", "---\nsource: https://example.com/x\n---\n"),
+                         "webclip")
+        self.assertEqual(_guess_type("a.md", "Abstract\n...\ndoi: 10.1000/xyz"), "paper")
+        mail = "From: a@x.com\nTo: b@y.com\nSubject: 자료\n\ndoi: 10.1000/xyz"
+        self.assertEqual(_guess_type("a.md", mail), HOLD)
+
+    def test_yes_holds_unclassifiable_file(self):
+        """--yes(야간 배치)에서 추정할 수 없는 파일은 옮기지 않는다."""
+        self.put_inbox("회의 메모.md", "하나")
+        self.put_inbox("무제 문서.md", "둘")
+        r = self.run_cli("ingest", "--yes")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([s["type"] for s in self.manifest()["sources"]], ["meeting"])
+        self.assertEqual(self.inbox_files(), ["무제 문서.md"])
+        self.assertIn("분류 미정", r.stdout)
+
+    def test_reference_goes_to_references_even_without_folder(self):
+        """References/ 폴더가 없는 기존 프로젝트에서도 reference로 등록된다."""
+        folder = self.root / "20_Sources" / "References"
+        for p in folder.iterdir():
+            p.unlink()
+        folder.rmdir()
+        self.put_inbox("무제 문서.md")
+        r = self.run_cli("ingest", stdin="reference\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        src = self.manifest()["sources"]
+        self.assertEqual([s["type"] for s in src], ["reference"])
+        self.assertTrue(src[0]["path"].startswith("20_Sources/References/"))
+
+    def test_enter_on_hold_default_and_unknown_answer_hold(self):
+        self.put_inbox("무제 문서.md", "하나")
+        self.put_inbox("무제 문서2.md", "둘")
+        r = self.run_cli("ingest", stdin="\nrefrence\n")  # Enter(기본 h), 오타
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.manifest()["sources"], [])
+        self.assertEqual(len(self.inbox_files()), 2)
+
+    def test_compile_prompt_marks_reference_claims(self):
+        from llm_wiki.compile_cmd import _build_prompt
+        from llm_wiki.core import Project
+        proj = Project(self.root)
+        args = ("", "", "", False, "본문")
+        ref = _build_prompt(proj, {"path": "20_Sources/References/x.pdf", "type": "reference"}, *args)
+        paper = _build_prompt(proj, {"path": "20_Sources/Papers/x.pdf", "type": "paper"}, *args)
+        self.assertIn("주체를 밝혀", ref)
+        self.assertNotIn("주체를 밝혀", paper)
+
+
 class CompileTests(ProjectCase):
     DOC = ("---\ntype: concept\nproject: \"모델이 추측한 이름\"\nstatus: approved\n"
            "reviewer: 아무개\ngenerated_by: llm-wiki phase0\n---\n\n# 제목\n\n본문\n")
 
     def compile_with(self, items: list) -> subprocess.CompletedProcess:
-        self.put_inbox("source-note.md", "원자료")
+        self.put_inbox("meeting-note.md", "원자료")
         r = self.run_cli("ingest", "--yes")
         self.assertEqual(r.returncode, 0, r.stderr)
         fake = Path(self._tmp.name) / "fake.json"

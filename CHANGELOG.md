@@ -9,6 +9,34 @@ GIST HUR Group LLM-Wiki의 버전별 변경 이력. 형식은 [Keep a Changelog]
 
 업데이트: `pipx reinstall llm-wiki` / 버전 확인: `llm-wiki --version`
 
+## [0.8.0] — 2026-09-24
+
+실사용 ingest에서 분류 추정이 계속 `paper`로 빗나가고(9/20 3건 중 2건, 9/24 5건 중 3건),
+회사소개서처럼 어느 분류에도 맞지 않는 자료가 나온 문제를 다룬다.
+기존 프로젝트는 그대로 쓸 수 있다 — `References/` 폴더는 처음 쓸 때 만들어진다.
+
+### Added
+- **분류 `reference`(참고자료) → `20_Sources/References/`** — 외부 주체가 만든 비학술 자료:
+  기업·기관 소개서, 카탈로그, 사양서, 표준·규격, 보도자료, 외부 발표자료. 이 과제 자체의
+  문서는 종전대로 `proposal`, 학술 논문·보고서는 `paper`. 새 프로젝트는 `init`이 폴더를 만든다
+- compile이 `reference` 출처의 주장을 주체를 밝혀("○○사 소개자료에 따르면 …") 쓰도록 프롬프트에
+  규칙을 넣는다 — 홍보성 주장이 사실이나 과제 계획처럼 편찬되지 않게. 템플릿의
+  `workflows/ingest.md`·`compile.md`에도 반영 (기존 프로젝트의 사본은 `init`이 덮어쓰지 않으므로
+  에이전트가 절차서를 직접 따르는 경우 손으로 옮겨야 한다)
+
+### Changed
+- **확신 없는 분류 추정의 기본값이 `paper`에서 `h`(보류)로** — 어떤 키워드에도 맞지 않는
+  파일은 모두 `paper`로 떨어졌고, `ingest --yes` 배치에서는 그대로 `Papers/`로 옮겨졌다. 이제
+  `paper`는 긍정 신호(arxiv·doi·et al·논문·journal·arXiv ID·`저자2026…` 파일명, 텍스트 파일 속
+  DOI)가 있을 때만 추정한다. **`--yes`에서 추정할 수 없는 파일은 옮기지 않고 Inbox에 남긴다** —
+  야간 배치 뒤에 보류가 쌓이면 `llm-wiki ingest`를 대화형으로 돌려 분류하면 된다
+- 분류 키워드 보강 — `proposal`: 양식·과제·사업·기획 / `reference`: 회사소개·소개서·카탈로그·
+  catalog·brochure·datasheet·사양서·규격·보도자료. `기획회의`는 여전히 `meeting`이 우선한다
+- 텍스트 파일(`.md`·`.txt`·`.html`·`.eml`)은 앞부분도 본다 — frontmatter `tags`의
+  `meeting-minutes` 등은 `meeting`, `source:`/`url:`이 http 주소면 `webclip`. 메일 헤더
+  (From/To/Subject)가 있는 문서는 본문에 DOI가 있어도 `paper`로 추정하지 않는다
+- 분류 질문에 없는 값(오타)을 입력하면 추정값으로 조용히 넘어가던 것을 보류로 바꿨다
+
 ## [0.7.2] — 2026-09-20
 
 새 프로젝트에서의 첫 실사용(init → ingest → compile → audit)에서 나온 문제를 고친다.

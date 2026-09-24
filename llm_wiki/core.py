@@ -22,6 +22,8 @@ SOURCE_TYPES = {
     "webclip": "Web-Clips",
     "qa": "QA-Sessions",
     "proposal": "Proposals",
+    # 외부 주체가 만든 비학술 자료 — 기업·기관 소개서, 카탈로그, 사양서, 표준·규격, 보도자료
+    "reference": "References",
 }
 STATUS_VALUES = {"draft", "reviewed", "approved", "deprecated", "disputed"}
 # AI(편찬기)가 쓸 수 있는 경로 화이트리스트 (프로젝트 루트 기준 접두사)

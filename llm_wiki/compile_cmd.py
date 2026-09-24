@@ -84,6 +84,13 @@ def _source_text(proj: Project, src: dict, agentic: bool) -> str | None:
     return None
 
 
+# 외부 주체의 비학술 자료(회사소개서·카탈로그 등)는 홍보성 주장이 섞여 있다 —
+# 과제 계획이나 확인된 사실처럼 편찬되지 않게 주체를 밝혀 쓰게 한다
+_REFERENCE_RULE = """
+- 이 자료는 외부 주체가 만든 참고자료(reference)다. 여기서 나온 주장은 주체를 밝혀
+  서술하라 (예: "○○사 소개자료에 따르면 …"). 사실이나 이 과제의 계획으로 단정하지 마라."""
+
+
 def _build_prompt(proj: Project, src: dict, index: str, ctx: str,
                   template: str, agentic: bool, text: str | None,
                   lang: str = "ko") -> str:
@@ -110,7 +117,7 @@ def _build_prompt(proj: Project, src: dict, index: str, ctx: str,
 ## 규칙
 - status는 draft만. 코멘트 섹션은 절대 건드리지 않는다. 배경지식 서술에는
   "(모델 배경지식 — 검증 필요)" 표시. 프로젝트 자료 기반 내용과 명확히 구분.
-- 이 자료에서 나올 문서는 보통 1~4건이다. 억지로 늘리지 마라.
+- 이 자료에서 나올 문서는 보통 1~4건이다. 억지로 늘리지 마라.{_REFERENCE_RULE if src.get('type') == 'reference' else ''}
 - 출력 언어: **{LANG_NAME[lang]}** (전문 용어는 첫 등장 시 원문 병기).
 {_protocol(lang)}"""
 

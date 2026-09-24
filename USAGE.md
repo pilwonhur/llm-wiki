@@ -277,7 +277,7 @@ Project-Exo/
 ├── 00_Project/         README.md, scope.md, glossary.md, members.md   ← you fill these in
 ├── 10_Inbox/           Pilwon Hur/, Jane Kim/, Daehak Lee/            ← one folder per member
 ├── 20_Sources/         Papers/ Meeting-Notes/ Experiments/ Datasets/
-│                       Web-Clips/ QA-Sessions/ Proposals/
+│                       Web-Clips/ QA-Sessions/ Proposals/ References/
 ├── 30_Wiki/            Concepts/ Methods/ Findings/ People/ Equipment/
 │                       Questions/ _Proposals/
 ├── 40_Decisions/  50_Outputs/  90_Archive/
@@ -327,9 +327,9 @@ still get processed but are recorded as `unknown`.
 ```console
 $ llm-wiki ingest
   Jane Kim/kim2026_adaptive_gait.pdf
-    분류 [paper] (paper/meeting/experiment/dataset/webclip/qa/proposal, h=보류): ⏎
+    분류 [paper] (paper/meeting/experiment/dataset/webclip/qa/proposal/reference, h=보류): ⏎
   Jane Kim/meeting_2026-08-12.md
-    분류 [meeting] (paper/meeting/experiment/dataset/webclip/qa/proposal, h=보류): ⏎
+    분류 [meeting] (paper/meeting/experiment/dataset/webclip/qa/proposal/reference, h=보류): ⏎
 
 ✓ 등록 2 / 중복 0 / 보류 0
   - Jane Kim/kim2026_adaptive_gait.pdf → 20_Sources/Papers/kim2026_adaptive_gait.pdf (paper, Jane Kim)
@@ -337,14 +337,18 @@ $ llm-wiki ingest
 다음: `llm-wiki compile` 로 편찬하세요.
 ```
 
-`--yes` accepts every guess without asking — that is what nightly batches use.
+`--yes` accepts every guess without asking — that is what nightly batches use. When the guess
+is `h` (no confident type), the file is **held in the Inbox**, not moved; run `llm-wiki ingest`
+interactively later to pick its type.
 
 ### What ingest does, in order
 
 1. **Scan** `10_Inbox/` recursively (skipping `.gitkeep`, `.DS_Store`, dotfiles).
 2. **Hash** each file (SHA-256) and check it against the manifest — a duplicate is reported and
    left in place, never registered twice.
-3. **Guess a type** from the filename, then ask you (unless `--yes`).
+3. **Guess a type** from the filename (and, for text files such as `.md`/`.txt`/`.html`, from the
+   first few KB — frontmatter `tags`, a `source:` URL, a DOI), then ask you (unless `--yes`).
+   With no confident signal the default is `h` (hold), never a guess.
 4. **Normalize the filename**, stripping characters that break Obsidian wikilinks (`[ ] # ^ |`).
    The original name is preserved in the manifest as `original_name`.
 5. **Move** the file into the matching `20_Sources/` subfolder.
@@ -354,13 +358,21 @@ $ llm-wiki ingest
 
 | Type | Destination | Filename keywords that trigger the guess |
 |---|---|---|
-| `paper` | `20_Sources/Papers/` | (default) |
+| `paper` | `20_Sources/Papers/` | arxiv, doi, et al, 논문, journal, proceedings, an arXiv ID, `author2026…`; a DOI in a text file |
 | `meeting` | `20_Sources/Meeting-Notes/` | 회의, meeting, minutes |
 | `experiment` | `20_Sources/Experiments/` | 실험, experiment |
 | `dataset` | `20_Sources/Datasets/` | dataset, 데이터셋 |
 | `webclip` | `20_Sources/Web-Clips/` | `.html`, `.url`, "clip" |
-| `proposal` | `20_Sources/Proposals/` | 계획서, proposal, 제안서, 별첨 |
+| `proposal` | `20_Sources/Proposals/` | 계획서, proposal, 제안서, 별첨, 양식, 과제, 사업, 기획 |
+| `reference` | `20_Sources/References/` | 회사소개, 소개서, 카탈로그, catalog, brochure, datasheet, 사양서, 규격, 보도자료 |
 | `qa` | `20_Sources/QA-Sessions/` | (set automatically for `_qa/` submissions) |
+| — | stays in `10_Inbox/` | nothing matched → default `h` (hold) |
+
+`proposal` is this project's own paperwork; `reference` is non-academic material written by
+someone else — company or institute profiles, catalogs, spec sheets, standards, press releases,
+outside slide decks. `compile` attributes claims from a `reference` source to its author
+("according to X's company profile …") instead of stating them as fact. `References/` is
+created on first use, so older projects need no migration.
 
 ### Edge cases you will hit
 
@@ -368,7 +380,7 @@ $ llm-wiki ingest
 |---|---|
 | Same file added twice | Reported as duplicate by hash, left in the Inbox, not registered |
 | A different file with a name already in `20_Sources/` | Held (never overwritten) — rename and re-run |
-| You press `h` at the prompt | Held in the Inbox for later |
+| You press `h` at the prompt, or type an unknown type | Held in the Inbox for later |
 | Uploader folder not in `members.md` | Warning logged, registration proceeds |
 | Filename has `[`, `]`, `#`, `^`, `|` | Normalized; original recorded in the manifest |
 | Files in `10_Inbox/_qa/` | Registered as `qa`, attributed to the **asker named inside the file**, not the folder |
@@ -1988,7 +2000,7 @@ Project-Exo/
 ├── 00_Project/         README.md, scope.md, glossary.md, members.md   ← 당신이 채웁니다
 ├── 10_Inbox/           Pilwon Hur/, Jane Kim/, Daehak Lee/            ← 구성원별 폴더
 ├── 20_Sources/         Papers/ Meeting-Notes/ Experiments/ Datasets/
-│                       Web-Clips/ QA-Sessions/ Proposals/
+│                       Web-Clips/ QA-Sessions/ Proposals/ References/
 ├── 30_Wiki/            Concepts/ Methods/ Findings/ People/ Equipment/
 │                       Questions/ _Proposals/
 ├── 40_Decisions/  50_Outputs/  90_Archive/
@@ -2039,9 +2051,9 @@ $ cp meeting_2026-08-12.md                  Project-Exo/10_Inbox/Jane\ Kim/
 ```console
 $ llm-wiki ingest
   Jane Kim/kim2026_adaptive_gait.pdf
-    분류 [paper] (paper/meeting/experiment/dataset/webclip/qa/proposal, h=보류): ⏎
+    분류 [paper] (paper/meeting/experiment/dataset/webclip/qa/proposal/reference, h=보류): ⏎
   Jane Kim/meeting_2026-08-12.md
-    분류 [meeting] (paper/meeting/experiment/dataset/webclip/qa/proposal, h=보류): ⏎
+    분류 [meeting] (paper/meeting/experiment/dataset/webclip/qa/proposal/reference, h=보류): ⏎
 
 ✓ 등록 2 / 중복 0 / 보류 0
   - Jane Kim/kim2026_adaptive_gait.pdf → 20_Sources/Papers/kim2026_adaptive_gait.pdf (paper, Jane Kim)
@@ -2049,14 +2061,17 @@ $ llm-wiki ingest
 다음: `llm-wiki compile` 로 편찬하세요.
 ```
 
-`--yes`는 모든 추측을 묻지 않고 그대로 받아들입니다. 야간 배치가 쓰는 방식입니다.
+`--yes`는 모든 추측을 묻지 않고 그대로 받아들입니다. 야간 배치가 쓰는 방식입니다. 추측이 `h`(확신 없음)이면
+파일을 옮기지 않고 **Inbox에 보류**합니다. 나중에 `llm-wiki ingest`를 대화형으로 실행해 분류를 고르세요.
 
 ### ingest가 하는 일, 순서대로
 
 1. `10_Inbox/`를 재귀적으로 **스캔**합니다(`.gitkeep`, `.DS_Store`, 점 파일은 제외).
 2. 각 파일을 **해시**(SHA-256)해 매니페스트와 대조합니다. 중복은 보고만 하고 그 자리에 두며,
    절대 두 번 등록하지 않습니다.
-3. 파일명으로 **유형을 추측**한 뒤 물어봅니다(`--yes`가 아니면).
+3. 파일명(그리고 `.md`·`.txt`·`.html` 같은 텍스트 파일은 앞부분 몇 KB — frontmatter `tags`, `source:` URL,
+   DOI)으로 **유형을 추측**한 뒤 물어봅니다(`--yes`가 아니면). 확신할 신호가 없으면 기본값은 추측이 아니라
+   `h`(보류)입니다.
 4. Obsidian 위키링크를 깨뜨리는 문자(`[ ] # ^ |`)를 제거해 **파일명을 정규화**합니다.
    원래 이름은 매니페스트에 `original_name`으로 보존됩니다.
 5. 해당 `20_Sources/` 하위 폴더로 파일을 **이동**합니다.
@@ -2066,13 +2081,20 @@ $ llm-wiki ingest
 
 | 유형 | 목적지 | 추측을 유발하는 파일명 키워드 |
 |---|---|---|
-| `paper` | `20_Sources/Papers/` | (기본값) |
+| `paper` | `20_Sources/Papers/` | arxiv, doi, et al, 논문, journal, proceedings, arXiv ID, `저자2026…`; 텍스트 파일 속 DOI |
 | `meeting` | `20_Sources/Meeting-Notes/` | 회의, meeting, minutes |
 | `experiment` | `20_Sources/Experiments/` | 실험, experiment |
 | `dataset` | `20_Sources/Datasets/` | dataset, 데이터셋 |
 | `webclip` | `20_Sources/Web-Clips/` | `.html`, `.url`, "clip" |
-| `proposal` | `20_Sources/Proposals/` | 계획서, proposal, 제안서, 별첨 |
+| `proposal` | `20_Sources/Proposals/` | 계획서, proposal, 제안서, 별첨, 양식, 과제, 사업, 기획 |
+| `reference` | `20_Sources/References/` | 회사소개, 소개서, 카탈로그, catalog, brochure, datasheet, 사양서, 규격, 보도자료 |
 | `qa` | `20_Sources/QA-Sessions/` | (`_qa/` 제출물에 자동 지정) |
+| — | `10_Inbox/`에 그대로 | 해당 없음 → 기본값 `h`(보류) |
+
+`proposal`은 이 과제 자체의 문서이고, `reference`는 외부 주체가 만든 비학술 자료입니다 — 기업·기관 소개서,
+카탈로그, 사양서, 표준·규격, 보도자료, 외부 발표자료. `compile`은 `reference`에서 나온 주장을 사실로 단정하지
+않고 주체를 밝혀("○○사 소개자료에 따르면 …") 씁니다. `References/` 폴더는 처음 쓸 때 만들어지므로 기존
+프로젝트는 따로 옮길 것이 없습니다.
 
 ### 실제로 마주치게 될 경우들
 
@@ -2080,7 +2102,7 @@ $ llm-wiki ingest
 |---|---|
 | 같은 파일을 두 번 추가 | 해시로 중복 판정, Inbox에 그대로 두고 등록하지 않음 |
 | `20_Sources/`에 이미 있는 이름의 다른 파일 | 보류(절대 덮어쓰지 않음) — 이름을 바꿔 다시 실행 |
-| 프롬프트에서 `h`를 누름 | Inbox에 보류 |
+| 프롬프트에서 `h`를 누르거나 없는 유형을 입력 | Inbox에 보류 |
 | 업로더 폴더가 `members.md`에 없음 | 경고를 남기고 등록은 진행 |
 | 파일명에 `[`, `]`, `#`, `^`, `\|`가 있음 | 정규화하고 원래 이름은 매니페스트에 기록 |
 | `10_Inbox/_qa/`의 파일 | `qa`로 등록하고, 폴더가 아니라 **파일 안에 적힌 질문자**에게 귀속 |
