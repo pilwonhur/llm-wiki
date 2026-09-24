@@ -8,6 +8,9 @@ CLI가 큐·안전장치·검증·기록을 담당하고, LLM은 문서 내용�
   - 생성·갱신 문서의 status는 무조건 draft로 강제 (F2.9)
   - 대상 문서가 reviewed 이상이면 update를 propose로 강등 (규칙 3)
   - 기존 문서의 "## 코멘트" 섹션은 갱신 시 원본 그대로 보존 (F12.1)
+  - 제안 파일은 덮어쓰지 않는다 — 한 실행에서 여러 자료가 같은 문서에 제안해도 전부 남는다
+  - 결정사항은 `40_Decisions`에 쓰지 않고 `_Proposals/decisions-…` 후보로만 둔다 (규칙 1).
+    승격은 사람이 `llm-wiki review apply`로 한다
 """
 from __future__ import annotations
 
@@ -20,7 +23,7 @@ from pathlib import Path
 from . import __version__, backends
 from .core import (LANG_NAME, WARN_TEXT, Project, field_pattern, frontmatter,
                    heading, heading_pattern, in_wiki, lang_of, nfc, require_project,
-                   run_id, today, unique_path)
+                   run_id, safe_name, today, unique_path)
 
 PROTOCOL_HEAD = """
 출력은 반드시 아래 JSON 배열 **하나만** 출력하라 (설명·마크다운 펜스 금지):
@@ -90,6 +93,20 @@ _REFERENCE_RULE = """
 - 이 자료는 외부 주체가 만든 참고자료(reference)다. 여기서 나온 주장은 주체를 밝혀
   서술하라 (예: "○○사 소개자료에 따르면 …"). 사실이나 이 과제의 계획으로 단정하지 마라."""
 
+# 회의록의 결정사항은 Wiki 문서가 아니라 사람이 승격할 결정 후보로 따로 낸다.
+# 후보를 처음부터 완성본 형식으로 받아야 승격 때 변환이 필요 없다
+_DECISION_RULE = """
+- 이 자료는 회의록이다. 논의 내용은 위 규칙대로 Wiki 문서로 편찬하고, **확정된 결정사항**은
+  결정 1건마다 항목 하나로 따로 낸다:
+  {{"action": "decision", "path": "40_Decisions/<결정일 YYYY-MM-DD> <결정 제목>.md",
+   "content": "<아래 결정 템플릿의 완성본>"}}
+  결정일(date)은 회의 날짜, context는 회의 이름. 논의만 되고 확정되지 않은 것은 결정이 아니다
+  (해당 Wiki 문서의 미해결 질문으로). 결정이 없으면 decision 항목을 내지 마라.
+  이 항목은 사람이 확인한 뒤 `40_Decisions`로 옮긴다 — 너는 저장 위치를 신경 쓰지 않아도 된다.
+
+## 결정 템플릿 (decision 항목용)
+{template}"""
+
 
 def _build_prompt(proj: Project, src: dict, index: str, ctx: str,
                   template: str, agentic: bool, text: str | None,
@@ -98,6 +115,9 @@ def _build_prompt(proj: Project, src: dict, index: str, ctx: str,
                  "PDF 물리 페이지 번호를 실제 확인). 프로젝트 폴더 밖은 읽지 마라."
                  if agentic else
                  f"원자료 ({src['path']}) 본문:\n<<<\n{text}\n>>>")
+    extra = _REFERENCE_RULE if src.get("type") == "reference" else ""
+    if src.get("type") == "meeting":
+        extra += _DECISION_RULE.format(template=proj.decision_template(lang))
     return f"""너는 연구실 Wiki 편찬자다. 아래 원자료 1건을 근거로 지식 문서를 편찬한다.
 
 ## 프로젝트 맥락
@@ -117,7 +137,7 @@ def _build_prompt(proj: Project, src: dict, index: str, ctx: str,
 ## 규칙
 - status는 draft만. 코멘트 섹션은 절대 건드리지 않는다. 배경지식 서술에는
   "(모델 배경지식 — 검증 필요)" 표시. 프로젝트 자료 기반 내용과 명확히 구분.
-- 이 자료에서 나올 문서는 보통 1~4건이다. 억지로 늘리지 마라.{_REFERENCE_RULE if src.get('type') == 'reference' else ''}
+- 이 자료에서 나올 문서는 보통 1~4건이다. 억지로 늘리지 마라.{extra}
 - 출력 언어: **{LANG_NAME[lang]}** (전문 용어는 첫 등장 시 원문 병기).
 {_protocol(lang)}"""
 
@@ -151,21 +171,38 @@ def _stamp(content: str, fields: dict) -> str:
     return m.group(1) + fm + m.group(3) + content[m.end():]
 
 
+def _stage_decision(proj: Project, rel: str, content: str) -> str:
+    """결정 후보를 `_Proposals/decisions-<결정일> <제목>.md`로 둔다.
+
+    모델이 준 경로(`40_Decisions/…`)에는 절대 쓰지 않는다 — 이름만 가져온다.
+    """
+    content = _stamp(content, {"type": "decision"}) if content.startswith("---") else content
+    name = safe_name(Path(rel).stem) if rel else "결정"
+    out = unique_path(proj.root / "30_Wiki" / "_Proposals", f"decisions-{name}")
+    out.write_text(content, encoding="utf-8")
+    return f"결정 후보: {out.relative_to(proj.root)}"
+
+
 def _apply(proj: Project, rid: str, items: list, report: list,
-           stamp: dict | None = None) -> None:
+           stamp: dict | None = None, tag: str = "") -> None:
+    """tag는 원자료 식별자(해시 앞 8자) — 같은 실행에서 여러 자료가 같은 문서에
+    제안해도 파일명이 갈리게 한다. unique_path는 그래도 겹칠 때의 마지막 안전장치."""
+    suffix = f"-{rid}-{tag}" if tag else f"-{rid}"
     for it in items:
         action = it.get("action")
         rel = nfc(str(it.get("path", "")))
         content = it.get("content", "")
+        if action == "decision":  # 규칙 1: 40_Decisions에는 쓰지 않는다 — 후보로만
+            report.append(_stage_decision(proj, rel, content))
+            continue
         target = (proj.root / rel).resolve()
         # N1: 경로 화이트리스트 — 30_Wiki 밖 쓰기 차단
         if not in_wiki(proj.root, target):
             report.append(f"차단: 30_Wiki 밖 쓰기 시도 ({rel})")
             continue
         if action == "propose" or "_Proposals" in rel:
-            name = Path(rel).stem.split("-2")[0]
-            target = proj.root / "30_Wiki" / "_Proposals" / f"{name}-{rid}.md"
-            target.parent.mkdir(parents=True, exist_ok=True)
+            name = re.sub(r"-\d{8}-\d{4,6}$", "", Path(rel).stem)  # 모델이 붙인 실행ID만 뗀다
+            target = unique_path(proj.root / "30_Wiki" / "_Proposals", f"{name}{suffix}")
             target.write_text(content, encoding="utf-8")
             report.append(f"제안: {target.relative_to(proj.root)}")
             continue
@@ -177,8 +214,8 @@ def _apply(proj: Project, rid: str, items: list, report: list,
             old_fm = frontmatter(old)
             if old_fm.get("status") not in (None, "draft"):
                 # 규칙 3: reviewed 이상 → 제안으로 강등
-                target = proj.root / "30_Wiki" / "_Proposals" / f"{Path(rel).stem}-{rid}.md"
-                target.parent.mkdir(parents=True, exist_ok=True)
+                target = unique_path(proj.root / "30_Wiki" / "_Proposals",
+                                     f"{Path(rel).stem}{suffix}")
                 lang = lang_of(proj.config())
                 target.write_text(f"# 변경 제안: [[{Path(rel).stem}]] (자동 강등)\n\n"
                                   f"대상이 {old_fm.get('status')} 상태라 직접 수정 불가.\n\n"
@@ -314,7 +351,7 @@ def cmd_compile(args) -> None:
                 t0 = time.monotonic()
                 out, usage = backend.complete(prompt, cwd=proj.root)
                 items = _extract_json(out)
-                _apply(proj, rid, items, report, stamp)
+                _apply(proj, rid, items, report, stamp, str(src.get("hash", ""))[:8])
                 print(f"    완료 ({time.monotonic() - t0:.0f}초, 산출 {len(items)}건)", flush=True)
                 src["processed"] = True
                 proj.save_manifest(m)  # 파일 단위로 저장 — 중단 시 이어서 (C9)
@@ -355,6 +392,16 @@ def cmd_compile(args) -> None:
         print(tail)
         for r in report:
             print(f"  - {r}")
+        # 회귀 감지 — 제안 파일이 같은 경로로 두 번 보고되면 앞 내용이 사라진 것이다
+        props = [r.split(": ", 1)[1] for r in report if r.startswith(("제안", "결정 후보"))]
+        dup = sorted({p for p in props if props.count(p) > 1})
+        if dup:
+            print("  경고: 같은 제안 파일이 한 실행에서 두 번 기록됨 — 앞 내용이 덮어써졌을 수 있음: "
+                  + ", ".join(dup))
+        decisions = [p for p in props if Path(p).name.startswith("decisions-")]
+        if decisions:
+            print(f"  결정 후보 {len(decisions)}건 — 확인 후 `llm-wiki review apply <파일명>` 으로 "
+                  "40_Decisions에 저장")
         if failures:
             print("  실패: " + "; ".join(failures))
         print(f"검토: `llm-wiki review` / 변경 확인: `llm-wiki diff {rid}` / 복원: `llm-wiki rollback {rid}`")

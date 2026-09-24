@@ -639,6 +639,33 @@ $ llm-wiki review apply --all
 The list is always printed **before** the confirmation — you never approve something you have
 not seen. Failures are isolated and counted.
 
+If a single compile run produces several proposals for the same document (two sources both
+touching a `reviewed` page), each one gets its own file — the name carries the run ID and the
+first 8 characters of the source's hash — so none of them is lost.
+
+### Decision candidates → `40_Decisions/`
+
+When compile reads meeting minutes, each **settled** decision comes out as a separate candidate,
+`30_Wiki/_Proposals/decisions-<date> <title>.md`, already in the shape of
+`.llm-wiki/templates/decision.md` (Decision / Background / Open items / Related sources). The AI
+still never writes to `40_Decisions/`. You save a candidate there with the same command:
+
+```console
+$ llm-wiki review apply "그리퍼"
+다음 내용을 40_Decisions/2026-09-21 그리퍼 개발 분담.md 로 저장합니다:
+…
+저장할까요? [y/N]: y
+✓ 결정 저장: 40_Decisions/2026-09-21 그리퍼 개발 분담.md
+```
+
+- The file name comes from the candidate's `date` and `# title`; edit the candidate first if
+  either is wrong. `recorded` and `recorded_by` (the config's `review.reviewer`) are filled in
+  by the command, not the model.
+- An existing file in `40_Decisions/` is never overwritten — the command stops instead.
+- `apply --all` skips decision candidates; save them one at a time. `--yes` skips the prompt.
+- The log records a **promotion**, not a rejection. To discard a candidate, use
+  `review reject <name> --reason …`.
+
 ### Reject one
 
 ```console
@@ -2363,6 +2390,31 @@ $ llm-wiki review apply --all
 
 목록은 항상 확인 프롬프트 **앞에** 출력됩니다 — 보지 않은 것을 승인하는 일은 없습니다.
 실패는 격리되고 개수로 집계됩니다.
+
+한 번의 compile에서 같은 문서에 제안이 여러 건 나와도(두 자료가 같은 `reviewed` 문서를
+건드린 경우) 제안마다 파일이 따로 생깁니다 — 이름에 실행 ID와 원자료 해시 앞 8자가 붙으므로
+어느 것도 사라지지 않습니다.
+
+### 결정 후보 → `40_Decisions/`
+
+compile이 회의록을 읽으면 **확정된** 결정사항이 한 건씩 따로
+`30_Wiki/_Proposals/decisions-<결정일> <제목>.md` 후보로 나옵니다. 처음부터
+`.llm-wiki/templates/decision.md` 형식(결정 내용 / 경과 / 미정 사항 / 관련 자료)의 완성본입니다.
+AI는 여전히 `40_Decisions/`에 쓰지 않습니다. 저장은 같은 명령으로 당신이 합니다.
+
+```console
+$ llm-wiki review apply "그리퍼"
+다음 내용을 40_Decisions/2026-09-21 그리퍼 개발 분담.md 로 저장합니다:
+…
+저장할까요? [y/N]: y
+✓ 결정 저장: 40_Decisions/2026-09-21 그리퍼 개발 분담.md
+```
+
+- 파일명은 후보의 `date`와 `# 제목`에서 나옵니다. 틀렸으면 후보 파일을 먼저 고치세요.
+  `recorded`·`recorded_by`(config의 `review.reviewer`)는 모델이 아니라 명령이 채웁니다.
+- `40_Decisions/`에 같은 이름의 파일이 있으면 덮어쓰지 않고 멈춥니다.
+- `apply --all`은 결정 후보를 건너뜁니다 — 한 건씩 저장하세요. `--yes`는 확인 질문을 생략합니다.
+- 로그에는 거부가 아니라 **승격**으로 남습니다. 후보를 버리려면 `review reject <이름> --reason …`.
 
 ### 하나 거부하기
 

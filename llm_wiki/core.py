@@ -421,6 +421,24 @@ class Project:
         d = self.root / "30_Wiki" / "_Proposals"
         return sorted(p for p in d.glob("*.md")) if d.exists() else []
 
+    def decision_template(self, lang: str) -> str:
+        """결정 후보 템플릿. `init`은 기존 프로젝트의 사본을 덮어쓰지 않으므로
+        0.9.0 이전 프로젝트에는 파일이 없다 — 그때는 패키지 원본을 쓴다."""
+        own = self.meta / "templates" / "decision.md"
+        if own.exists():
+            return own.read_text(encoding="utf-8")
+        pkg = (Path(__file__).parent / "templates" / "project" / ".llm-wiki" / "templates"
+               / f"decision.{lang}.md")
+        return pkg.read_text(encoding="utf-8") if pkg.exists() else ""
+
+
+def is_decision(p: Path) -> bool:
+    """`_Proposals`의 파일이 결정 후보인가 — `review apply`가 Wiki 병합 대신
+    `40_Decisions` 승격으로 처리한다."""
+    if nfc(p.name).startswith(("decisions-", "decision-")):
+        return True
+    return frontmatter(p.read_text(encoding="utf-8")).get("type") == "decision"
+
 
 def _pid_alive(pid: int) -> bool:
     if os.name == "nt":

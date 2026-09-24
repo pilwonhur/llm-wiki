@@ -6,8 +6,8 @@ from datetime import date
 from pathlib import Path
 
 from .core import (GLOBAL_REGISTRY, Project, dump_yamlish, frontmatter,
-                   heading, heading_pattern, lang_of, require_project, run_id,
-                   today)
+                   heading, heading_pattern, is_decision, lang_of, require_project,
+                   run_id, today)
 
 REGISTRY = GLOBAL_REGISTRY
 
@@ -26,9 +26,11 @@ def cmd_review(args) -> None:
             drafts.append((fm.get("created", ""), rel))
         elif fm.get("status") == "disputed":
             disputed.append(rel)
-    props = [str(p.name) for p in proj.proposals()]
+    props, decisions = [], []
+    for p in proj.proposals():
+        (decisions if is_decision(p) else props).append(p.name)
 
-    if not (drafts or props or disputed):
+    if not (drafts or props or decisions or disputed):
         print("검토 대기 항목이 없습니다. ✓")
         return
     if drafts:
@@ -40,6 +42,11 @@ def cmd_review(args) -> None:
         for name in props:
             print(f"  - {name}")
         print("  → 승인: 제안 내용을 원문서에 반영 후 제안 파일 삭제 / 거부: 사유 남기고 삭제")
+    if decisions:
+        print(f"결정 후보 {len(decisions)}건 (확인 후 40_Decisions에 저장):")
+        for name in decisions:
+            print(f"  - {name}")
+        print("  → 저장: llm-wiki review apply <파일명> / 버림: llm-wiki review reject <파일명> --reason …")
     if disputed:
         print(f"disputed 판정 대기 {len(disputed)}건: " + ", ".join(disputed))
     print("\n검토 방법: 문서의 근거 링크를 원문과 대조 → frontmatter status를 reviewed로 편집")
@@ -59,7 +66,12 @@ def _review_act(args) -> None:
 
     proj = require_project()
     if getattr(args, "all", False) and args.action == "apply":
-        props = proj.proposals()
+        # 공식 결정은 한 건씩 확인해서 저장한다 — 일괄 승인에 섞지 않는다
+        held = [p for p in proj.proposals() if is_decision(p)]
+        props = [p for p in proj.proposals() if p not in held]
+        if held:
+            print(f"결정 후보 {len(held)}건은 일괄 처리에서 뺍니다 — 한 건씩 "
+                  "`llm-wiki review apply <파일명>` 으로 저장하세요.")
         if not props:
             print("대기 중인 제안이 없습니다.")
             return
@@ -94,12 +106,67 @@ def _review_act(args) -> None:
     prop = matches[0]
 
     if args.action == "reject":
-        proj.log("제안 거부 (review reject)", [f"{prop.name} — 사유: {args.reason or '미기재'}"])
+        what = "결정 후보 거부" if is_decision(prop) else "제안 거부"
+        proj.log(f"{what} (review reject)", [f"{prop.name} — 사유: {args.reason or '미기재'}"])
         prop.unlink()
         print(f"✓ 거부·정리: {prop.name}" + (f" (사유: {args.reason})" if args.reason else ""))
         return
 
-    _apply_one(proj, prop)
+    if is_decision(prop):
+        _promote_decision(proj, prop, getattr(args, "yes", False))
+    else:
+        _apply_one(proj, prop)
+
+
+def _promote_decision(proj, prop, yes: bool = False) -> None:
+    """결정 후보 → `40_Decisions/<결정일> <제목>.md` (규칙 1 유지).
+
+    AI는 40_Decisions에 쓰지 않는다. 쓰는 것은 사람이 실행한 이 명령이다 — 명령 실행이
+    곧 승인이라는 점은 review apply와 같다. LLM을 부르지 않고 후보를 그대로 옮긴다.
+    """
+    import re as _re
+
+    from .core import safe_name
+
+    text = prop.read_text(encoding="utf-8")
+    fm = frontmatter(text)
+    day = str(fm.get("date", "")).strip()
+    title = _re.search(r"^#\s+(.+?)\s*$", text, _re.M)
+    if not text.startswith("---") or not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) or not title:
+        raise SystemExit(
+            f"결정 후보 형식이 아닙니다 ({prop.name}) — frontmatter의 date(YYYY-MM-DD)와 "
+            "'# 제목' 줄이 필요합니다. .llm-wiki/templates/decision.md 형식으로 고친 뒤 다시 실행하세요.")
+    dest = proj.root / "40_Decisions" / f"{day} {safe_name(title.group(1))}.md"
+    rel = dest.relative_to(proj.root)
+    if dest.exists():
+        raise SystemExit(f"이미 있습니다: {rel} — 덮어쓰지 않습니다. 기존 결정을 확인하고, "
+                         "다른 결정이면 후보의 제목을 바꾸세요.")
+
+    # 기록 필드는 모델이 아니라 코드가 채운다
+    reviewer = str((proj.config().get("review") or {}).get("reviewer", "") or "")
+    stamped = {"type": "decision", "recorded": today()}
+    if reviewer and not reviewer.startswith("<"):
+        stamped["recorded_by"] = reviewer
+    from .compile_cmd import _stamp
+    out = _stamp(text, stamped)
+
+    print(f"다음 내용을 {rel} 로 저장합니다:\n")
+    print(out.rstrip())
+    print()
+    if not yes:
+        try:
+            ok = input("저장할까요? [y/N]: ").strip().lower() in ("y", "yes")
+        except EOFError:
+            ok = True  # 비대화형(스크립트·에이전트 경유)은 명령 실행 자체를 승인으로 간주
+        if not ok:
+            print("취소됨 — 후보는 그대로 남습니다. 내용을 고치려면 후보 파일을 직접 편집하세요.")
+            return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "x", encoding="utf-8") as f:  # 확인 사이에 생긴 파일도 덮어쓰지 않는다
+        f.write(out)
+    prop.unlink()
+    proj.log("결정 승격 (review apply)", [f"{prop.name} → {rel}"])
+    print(f"✓ 결정 저장: {rel}")
 
 
 def _apply_one(proj, prop) -> None:
@@ -113,7 +180,7 @@ def _apply_one(proj, prop) -> None:
     target = proj.root / m.group(1).strip() if m else None
     if not target or not target.exists():
         # frontmatter에 target이 없으면 파일명에서 유추
-        stem = _re.sub(r"-\d{8}-\d{6}$", "", prop.stem)
+        stem = _re.sub(r"-\d{8}-\d{6}(?:-[0-9a-f]{8})?(?:-\d+)?$", "", prop.stem)
         cands = [p for p in proj.wiki_docs() if nfc(p.stem) == nfc(stem)]
         if len(cands) != 1:
             raise SystemExit(f"대상 문서를 찾지 못했습니다 ({prop.name}). 수동 반영이 필요합니다.")
@@ -176,7 +243,10 @@ def cmd_status(args) -> None:
     print(f"프로젝트: {cfg.get('project')} (root: {proj.root})")
     print(f"원자료: {len(m['sources'])}건 (미처리 {len(unprocessed)}건)")
     print(f"Wiki: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())) or "없음")
-    print(f"제안 대기: {len(proj.proposals())}건 / 백업: {len(proj.list_backups())}회분")
+    props = proj.proposals()
+    nd = sum(is_decision(p) for p in props)
+    print(f"제안 대기: {len(props) - nd}건" + (f" / 결정 후보: {nd}건" if nd else "")
+          + f" / 백업: {len(proj.list_backups())}회분")
     if unprocessed:
         print("미처리 자료: " + ", ".join(Path(s["path"]).name for s in unprocessed[:5]))
 

@@ -217,5 +217,129 @@ class CompileTests(ProjectCase):
         self.assertIn("# 제목\n\n본문", out)  # 본문은 그대로
 
 
+
+class ProposalCollisionTests(ProjectCase):
+    """0.9.0 — 한 실행에서 두 자료가 같은 reviewed 문서에 제안하면 앞 제안이 덮어써졌다."""
+
+    APPROVED = ("---\ntype: concept\nstatus: approved\nreviewer: 아무개\n---\n\n"
+                "# 핸드 요구조건\n\n본문\n")
+
+    def test_two_sources_proposing_to_same_doc_both_survive(self):
+        doc = self.root / "30_Wiki" / "Concepts" / "핸드 요구조건.md"
+        doc.write_text(self.APPROVED, encoding="utf-8")
+        self.put_inbox("a-회의록.md", "자료 하나")
+        self.put_inbox("b-회의록.md", "자료 둘")
+        self.assertEqual(self.run_cli("ingest", "--yes").returncode, 0)
+        fake = Path(self._tmp.name) / "fake.json"
+        fake.write_text(json.dumps([  # 두 자료 모두 같은 응답: 제안 1 + 강등될 갱신 1
+            {"action": "propose", "path": "30_Wiki/_Proposals/핸드 요구조건-20260924-1535.md",
+             "content": "제안 본문"},
+            {"action": "update", "path": "30_Wiki/Concepts/핸드 요구조건.md",
+             "content": self.APPROVED},
+        ], ensure_ascii=False), encoding="utf-8")
+        r = self.run_cli("compile", fake=fake)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        props = sorted(nfc(p.name) for p in (self.root / "30_Wiki" / "_Proposals").glob("*.md"))
+        self.assertEqual(len(props), 4, props)
+        self.assertTrue(all(n.startswith("핸드 요구조건-") for n in props), props)
+        # 보고된 경로와 디스크가 1:1
+        reported = [ln.split(": ", 1)[1] for ln in r.stdout.splitlines()
+                    if ln.strip().startswith("- 제안")]
+        self.assertEqual(sorted(nfc(Path(x).name) for x in reported), props)
+        self.assertNotIn("경고", r.stdout)
+        self.assertEqual(doc.read_text(encoding="utf-8"), self.APPROVED)
+
+    def test_name_with_digit_after_hyphen_is_kept(self):
+        """예전 `split("-2")`는 `로봇-2축 관절`을 `로봇`으로 잘랐다."""
+        self.put_inbox("a-회의록.md")
+        self.assertEqual(self.run_cli("ingest", "--yes").returncode, 0)
+        fake = Path(self._tmp.name) / "fake.json"
+        fake.write_text(json.dumps([{"action": "propose", "path": "30_Wiki/Concepts/로봇-2축 관절.md",
+                                     "content": "x"}], ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(self.run_cli("compile", fake=fake).returncode, 0)
+        names = [nfc(p.name) for p in (self.root / "30_Wiki" / "_Proposals").glob("*.md")]
+        self.assertTrue(names and names[0].startswith("로봇-2축 관절-"), names)
+
+
+class DecisionPromotionTests(ProjectCase):
+    """0.9.0 — 결정 후보를 사람이 명령 한 줄로 40_Decisions에 저장한다 (규칙 1 유지)."""
+
+    def decision(self, day: str, title: str) -> dict:
+        body = (f"---\ntype: decision\ndate: {day}\nrecorded:\nrecorded_by:\n"
+                f"context: \"5차 기획회의\"\nsources: []\n---\n\n# {title}\n\n"
+                "## 결정 내용\n\n- 내용\n")
+        return {"action": "decision", "path": f"40_Decisions/{day} {title}.md", "content": body}
+
+    def compile_decisions(self) -> subprocess.CompletedProcess:
+        cfg = self.root / ".llm-wiki" / "config.yaml"
+        cfg.write_text(cfg.read_text(encoding="utf-8").replace(
+            'reviewer: "<TODO>"', 'reviewer: "허필원"').replace(
+            "reviewer: <TODO>", 'reviewer: "허필원"'), encoding="utf-8")
+        self.put_inbox("5차 기획회의 회의록.md", "회의 내용")
+        self.assertEqual(self.run_cli("ingest", "--yes").returncode, 0)
+        fake = Path(self._tmp.name) / "fake.json"
+        fake.write_text(json.dumps([self.decision("2026-09-21", "그리퍼 개발 분담"),
+                                    self.decision("2026-09-21", "시험 일정")],
+                                   ensure_ascii=False), encoding="utf-8")
+        r = self.run_cli("compile", fake=fake)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r
+
+    def decisions_dir(self) -> list[str]:
+        return sorted(nfc(p.name) for p in (self.root / "40_Decisions").glob("*.md"))
+
+    def test_compile_never_writes_40_decisions(self):
+        r = self.compile_decisions()
+        self.assertEqual(self.decisions_dir(), [])
+        props = sorted(nfc(p.name) for p in (self.root / "30_Wiki" / "_Proposals").glob("*.md"))
+        self.assertEqual(props, ["decisions-2026-09-21 그리퍼 개발 분담.md",
+                                 "decisions-2026-09-21 시험 일정.md"])
+        self.assertIn("review apply", r.stdout)
+
+    def test_each_candidate_is_promoted_to_its_own_file(self):
+        self.compile_decisions()
+        for name in ("그리퍼", "시험"):
+            r = self.run_cli("review", "apply", name, "--yes")
+            self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertEqual(self.decisions_dir(), ["2026-09-21 그리퍼 개발 분담.md",
+                                                "2026-09-21 시험 일정.md"])
+        out = (self.root / "40_Decisions" / "2026-09-21 그리퍼 개발 분담.md").read_text(encoding="utf-8")
+        self.assertIn("\ntype: decision\n", out)
+        self.assertRegex(out, r"\nrecorded: \d{4}-\d{2}-\d{2}\n")
+        self.assertIn('\nrecorded_by: 허필원\n', out)
+        self.assertIn("## 결정 내용", out)
+        self.assertEqual(list((self.root / "30_Wiki" / "_Proposals").glob("*.md")), [])
+        log = (self.root / ".llm-wiki" / "processing-log.md").read_text(encoding="utf-8")
+        self.assertEqual(log.count("결정 승격"), 2)
+        self.assertNotIn("거부", log)
+
+    def test_existing_decision_is_not_overwritten(self):
+        self.compile_decisions()
+        dest = self.root / "40_Decisions" / "2026-09-21 그리퍼 개발 분담.md"
+        dest.write_text("사람이 쓴 결정", encoding="utf-8")
+        r = self.run_cli("review", "apply", "그리퍼", "--yes")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(dest.read_text(encoding="utf-8"), "사람이 쓴 결정")
+        self.assertEqual(len(list((self.root / "30_Wiki" / "_Proposals").glob("*그리퍼*"))), 1)
+
+    def test_apply_all_leaves_decisions_alone(self):
+        self.compile_decisions()
+        r = self.run_cli("review", "apply", "--all")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("결정 후보 2건은 일괄 처리에서 뺍니다", r.stdout)
+        self.assertEqual(self.decisions_dir(), [])
+
+    def test_meeting_prompt_asks_for_decisions(self):
+        from llm_wiki.compile_cmd import _build_prompt
+        from llm_wiki.core import Project
+        proj = Project(self.root)
+        args = ("", "", "", False, "본문")
+        meeting = _build_prompt(proj, {"path": "20_Sources/Meeting-Notes/x.md", "type": "meeting"}, *args)
+        paper = _build_prompt(proj, {"path": "20_Sources/Papers/x.pdf", "type": "paper"}, *args)
+        self.assertIn('"action": "decision"', meeting)
+        self.assertIn("type: decision", meeting)
+        self.assertNotIn('"action": "decision"', paper)
+
+
 if __name__ == "__main__":
     unittest.main()

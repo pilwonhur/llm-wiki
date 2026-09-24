@@ -89,9 +89,10 @@ def _install_lang_files(root: Path, lang: str) -> None:
     섹션 제목이 코드가 파싱하는 스키마라, 템플릿과 core.HEADINGS 가 같은 값을 써야 한다.
     """
     tdir = root / ".llm-wiki" / "templates"
-    src = tdir / f"wiki-doc.{lang}.md"
-    if src.exists():
-        (tdir / "wiki-doc.md").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    for kind in ("wiki-doc", "decision"):
+        src = tdir / f"{kind}.{lang}.md"
+        if src.exists():
+            (tdir / f"{kind}.md").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
     _fill(root / "AGENTS.md", {
         "- 출력 언어: **한국어** (전문 용어는 첫 등장 시 원문 병기).":
             f"- 출력 언어: **{LANG_NAME[lang]}** (전문 용어는 첫 등장 시 원문 병기). "

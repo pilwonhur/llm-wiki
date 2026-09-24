@@ -26,10 +26,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("audit", help="품질 감사 리포트 생성 (수정 없음)")
     sp = sub.add_parser("review", help="검토 대기 목록 / 제안 승인·거부")
     sp.add_argument("action", nargs="?", choices=["apply", "reject"],
-                    help="apply <제안> = 승인·반영 / reject <제안> = 거부·정리")
+                    help="apply <제안> = 승인·반영 (결정 후보는 40_Decisions에 저장) / "
+                         "reject <제안> = 거부·정리")
     sp.add_argument("proposal", nargs="?", help="제안 파일명 (일부만 써도 매칭)")
     sp.add_argument("--all", action="store_true", help="대기 중인 제안 전부 승인·반영")
     sp.add_argument("--reason", default="", help="거부 사유 (reject 시)")
+    sp.add_argument("--yes", action="store_true", help="결정 후보 저장 시 확인 질문 생략")
     sub.add_parser("status", help="프로젝트 현황 요약")
 
     sp = sub.add_parser("rollback", help="백업 시점으로 복원")

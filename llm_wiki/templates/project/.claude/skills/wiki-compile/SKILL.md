@@ -5,3 +5,4 @@ description: 미처리 원자료를 근거로 30_Wiki 문서를 편찬한다. "�
 
 `AGENTS.md`의 절대 규칙을 준수하면서 `.llm-wiki/workflows/compile.md`를 읽고 그 절차를 정확히 따르라. 백업 없이 시작하지 말 것.
 (정식 llm-wiki CLI가 설치된 환경이라면 절차 수행 대신 `llm-wiki compile`을 실행하고 결과를 해설하라.)
+결정 후보(`_Proposals/decisions-…`)가 나오면 보고 끝에 후보마다 저장 명령 한 줄을 준다: `llm-wiki review apply "<후보 파일명>"`.

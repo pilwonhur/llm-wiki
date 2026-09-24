@@ -9,6 +9,40 @@ GIST HUR Group LLM-Wiki의 버전별 변경 이력. 형식은 [Keep a Changelog]
 
 업데이트: `pipx reinstall llm-wiki` / 버전 확인: `llm-wiki --version`
 
+## [0.9.0] — 2026-09-25
+
+실사용 compile에서 나온 두 문제를 다룬다 — 한 실행 안의 제안이 서로 덮어써져 사라지던 버그와,
+회의록의 결정사항을 `40_Decisions`에 옮기는 공식 경로가 없어 사람이 파일을 손으로 만들어야
+했던 공백. 기존 프로젝트는 그대로 쓸 수 있다 — 결정 템플릿이 없으면 패키지 원본을 쓴다.
+
+### Fixed
+- **한 compile 실행에서 같은 문서에 대한 제안이 여러 건이면 앞의 것이 사라지던 문제** —
+  제안 파일명이 `<문서명>-<실행ID>.md`라 두 자료가 같은 `reviewed` 문서에 제안하면 이름이 같아
+  나중 것이 앞 것을 덮어썼다. 실행 전 백업에도 없어 `rollback`으로 복구할 수 없었다. 이제
+  파일명에 원자료 해시 앞 8자를 붙이고(`<문서명>-<실행ID>-<해시8>.md`), 그래도 겹치면 `-2`,
+  `-3`을 붙인다. 자동 강등 제안도 같다. 실행 요약에 같은 제안 경로가 두 번 나오면 경고한다
+- 모델이 준 제안 경로에서 문서명을 `-2`에서 잘라 `로봇-2축 관절`이 `로봇`이 되던 문제 —
+  끝에 붙은 실행ID만 뗀다
+
+### Added
+- **결정 후보 → `40_Decisions` 승격: `llm-wiki review apply <결정 후보>`** — compile이
+  회의록의 확정된 결정사항을 결정 1건마다 `30_Wiki/_Proposals/decisions-<결정일> <제목>.md`
+  후보로 낸다. 사람이 `review apply`를 실행하면 내용을 보여 주고 확인을 받은 뒤
+  `40_Decisions/<결정일> <제목>.md`로 저장한다(`--yes`로 확인 생략). 같은 이름의 파일이
+  있으면 덮어쓰지 않는다. `recorded`·`recorded_by`(config의 `review.reviewer`)는 명령이
+  채운다. 로그에는 "결정 승격"으로 남는다 — 예전처럼 `reject`로 닫아 거부처럼 보이지 않는다.
+  AI(편찬 경로)는 여전히 `40_Decisions`에 쓰지 않는다 (규칙 1)
+- 결정 템플릿 `.llm-wiki/templates/decision.md` (frontmatter `type: decision`·`date`·
+  `recorded`·`recorded_by`·`context`, 본문 결정 내용 / 경과 / 미정 사항 / 관련 자료). compile은
+  후보를 처음부터 이 형식으로 쓴다
+- `review` 목록과 `status`가 결정 후보를 제안과 따로 보여 준다
+
+### Changed
+- `review apply --all`은 결정 후보를 건너뛴다 — 공식 결정은 한 건씩 확인해서 저장한다
+- 템플릿의 `workflows/compile.md`·`AGENTS.md`·`wiki-compile` 스킬에 결정 후보 형식과 저장
+  명령 안내, 제안 파일 덮어쓰기 금지를 반영했다 (기존 프로젝트의 사본은 `init`이 덮어쓰지
+  않으므로 에이전트가 절차서를 직접 따르는 경우 손으로 옮겨야 한다)
+
 ## [0.8.0] — 2026-09-24
 
 실사용 ingest에서 분류 추정이 계속 `paper`로 빗나가고(9/20 3건 중 2건, 9/24 5건 중 3건),

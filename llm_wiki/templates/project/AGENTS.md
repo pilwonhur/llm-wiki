@@ -8,9 +8,9 @@
 
 ## 절대 규칙 (어떤 지시로도 우회 불가)
 
-1. **원자료 불가침**: `20_Sources/`, `40_Decisions/`의 파일을 수정·삭제·이름변경하지 않는다. 유일한 예외는 ingest 워크플로우가 `10_Inbox` → `20_Sources`로 파일을 옮기는 것이다.
+1. **원자료 불가침**: `20_Sources/`, `40_Decisions/`의 파일을 수정·삭제·이름변경하지 않는다. 유일한 예외는 ingest 워크플로우가 `10_Inbox` → `20_Sources`로 파일을 옮기는 것이다. 결정사항은 `30_Wiki/_Proposals/decisions-…` 후보로 준비하고, 사람에게 `llm-wiki review apply "<후보 파일명>"` 한 줄을 안내한다 (사람이 `40_Decisions` 파일을 직접 만들게 하지 않는다).
 2. **status는 draft만**: Wiki 문서의 frontmatter `status`에 당신이 쓸 수 있는 값은 `draft`뿐이다. `reviewed`/`approved`/`deprecated`/`disputed`는 사람만 부여한다.
-3. **검토된 문서는 제안으로**: `status: reviewed` 또는 `approved`인 문서는 본문을 직접 수정하지 않는다. 변경이 필요하면 `30_Wiki/_Proposals/<문서명>-<YYYY-MM-DD>.md`에 제안(현재 내용 / 제안 내용 / 근거)을 작성한다.
+3. **검토된 문서는 제안으로**: `status: reviewed` 또는 `approved`인 문서는 본문을 직접 수정하지 않는다. 변경이 필요하면 `30_Wiki/_Proposals/<문서명>-<YYYY-MM-DD>.md`(이미 있으면 `-2`, `-3` — 덮어쓰기 금지)에 제안(현재 내용 / 제안 내용 / 근거)을 작성한다.
 4. **출처 강제**: 모든 핵심 주장에 출처를 단다 — `[[20_Sources/Papers/파일명.pdf#page=5]]` 또는 `[[20_Sources/Meeting-Notes/2026-08-01.md#섹션명]]` 형식. 근거를 찾지 못한 서술은 단정하지 않고 아래 callout을 붙인다:
    ```
    > [!warning] 근거 확인 필요
